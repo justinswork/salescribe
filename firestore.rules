@@ -1,0 +1,16 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Each user can read/write only their own memos subtree.
+    // Memo IDs are client-generated UUIDs; no listing across users.
+    match /users/{uid}/memos/{memoId} {
+      allow read, write, delete: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // Default-deny for everything else.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

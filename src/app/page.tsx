@@ -5,6 +5,9 @@ import Recorder from "@/components/Recorder";
 import ExtractionView from "@/components/ExtractionView";
 import MemoHistory from "@/components/MemoHistory";
 import RelatedMemos from "@/components/RelatedMemos";
+import AuthGuard from "@/components/AuthGuard";
+import AccountMenu from "@/components/AccountMenu";
+import { useAuth } from "@/lib/AuthContext";
 import type { ChatMessage, Extraction, FollowupResult, Memo } from "@/lib/schema";
 import { loadMemos, saveMemo, deleteMemo, newMemoId, findRelatedMemos } from "@/lib/storage";
 
@@ -13,6 +16,16 @@ type Status = "idle" | "transcribing" | "extracting" | "coaching" | "ready_for_r
 const SAMPLE = `Okay, just got out of the meeting with Karen Holloway at Northwind Logistics. They're running into pretty bad spreadsheet sprawl on their dispatch side — Karen said they've got like fourteen different Excel files that drivers are emailing around every morning and it's blowing up. She mentioned they're looking at a budget in the thirty to forty thousand range for the first year. Decision is Karen plus their CFO Marcus. They're also evaluating FleetIO. I told her I'd send over our case study from Iron Mountain by end of day Friday. Oh, and remind me to call back our existing customer at Bay State Freight on Thursday about their renewal.`;
 
 export default function Home() {
+  return (
+    <AuthGuard>
+      <SalescribeApp />
+    </AuthGuard>
+  );
+}
+
+function SalescribeApp() {
+  const { user } = useAuth();
+
   const [status, setStatus] = useState<Status>("idle");
   const [transcript, setTranscript] = useState("");
   const [extraction, setExtraction] = useState<Extraction | null>(null);
@@ -30,10 +43,21 @@ export default function Home() {
   const [currentMemoId, setCurrentMemoId] = useState<string>("");
   const [viewingMemo, setViewingMemo] = useState<Memo | null>(null);
 
-  // Load past memos on mount.
+  // Load past memos whenever the signed-in user changes.
   useEffect(() => {
-    setPastMemos(loadMemos());
-  }, []);
+    if (!user) return;
+    let cancelled = false;
+    loadMemos()
+      .then((memos) => {
+        if (!cancelled) setPastMemos(memos);
+      })
+      .catch((e) => {
+        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
   function reset() {
     setStatus("idle");
@@ -50,7 +74,7 @@ export default function Home() {
     setViewingMemo(null);
   }
 
-  function persistCurrent(finalExtraction: Extraction, finalChat: ChatMessage[]) {
+  async function persistCurrent(finalExtraction: Extraction, finalChat: ChatMessage[]) {
     const id = currentMemoId || newMemoId();
     const memo: Memo = {
       id,
@@ -59,8 +83,9 @@ export default function Home() {
       extraction: finalExtraction,
       chat: finalChat,
     };
-    saveMemo(memo);
-    setPastMemos(loadMemos());
+    await saveMemo(memo);
+    const fresh = await loadMemos();
+    setPastMemos(fresh);
   }
 
   async function processTranscript(text: string) {
@@ -108,7 +133,7 @@ export default function Home() {
         setCurrentQuestion("");
         setCurrentQuestionType("none");
         setStatus("done");
-        persistCurrent(ex, c);
+        await persistCurrent(ex, c);
       } else {
         setCurrentQuestion(data.result.question);
         setCurrentQuestionType(data.result.question_type);
@@ -127,7 +152,14 @@ export default function Home() {
       const fd = new FormData();
       fd.append("audio", new File([blob], filename, { type: blob.type }));
       const r = await fetch("/api/transcribe", { method: "POST", body: fd });
-      if (!r.ok) throw new Error(`Transcription failed (${r.status})`);
+      if (!r.ok) {
+        let detail = "";
+        try {
+          const body = await r.json();
+          detail = body.error ? `: ${body.error}` : "";
+        } catch {}
+        throw new Error(`Transcription failed (${r.status})${detail}`);
+      }
       const data = (await r.json()) as { transcript: string };
       await processTranscript(data.transcript);
     } catch (e) {
@@ -168,21 +200,22 @@ export default function Home() {
     }
   }
 
-  function finalizeNow() {
+  async function finalizeNow() {
     if (!extraction) return;
     setCurrentQuestion("");
     setCurrentQuestionType("none");
     setStatus("done");
-    persistCurrent(extraction, chat);
+    await persistCurrent(extraction, chat);
   }
 
   function openMemo(m: Memo) {
     setViewingMemo(m);
   }
 
-  function handleDelete(id: string) {
-    deleteMemo(id);
-    setPastMemos(loadMemos());
+  async function handleDelete(id: string) {
+    await deleteMemo(id);
+    const fresh = await loadMemos();
+    setPastMemos(fresh);
   }
 
   async function submitText() {
@@ -208,20 +241,23 @@ export default function Home() {
     return (
       <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
         <header className="border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950">
-          <div className="mx-auto max-w-3xl px-6 py-5 flex items-baseline justify-between">
+          <div className="mx-auto max-w-3xl px-6 py-5 flex items-center justify-between">
             <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
               Salescribe
               <span className="ml-3 align-middle text-xs font-mono font-normal text-zinc-400 dark:text-zinc-500">
                 v {process.env.NEXT_PUBLIC_GIT_SHA}
               </span>
             </h1>
-            <button
-              type="button"
-              onClick={() => setViewingMemo(null)}
-              className="text-sm text-zinc-500 dark:text-zinc-400 underline"
-            >
-              ← Back
-            </button>
+            <div className="flex items-center gap-4">
+              <button
+                type="button"
+                onClick={() => setViewingMemo(null)}
+                className="text-sm text-zinc-500 dark:text-zinc-400 underline"
+              >
+                ← Back
+              </button>
+              <AccountMenu />
+            </div>
           </div>
         </header>
         <main className="mx-auto max-w-3xl px-6 py-8 flex flex-col gap-6">
@@ -270,16 +306,19 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
       <header className="border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950">
-        <div className="mx-auto max-w-3xl px-6 py-5 flex items-baseline justify-between">
+        <div className="mx-auto max-w-3xl px-6 py-5 flex items-center justify-between">
           <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
             Salescribe
             <span className="ml-3 align-middle text-xs font-mono font-normal text-zinc-400 dark:text-zinc-500">
               v {process.env.NEXT_PUBLIC_GIT_SHA}
             </span>
           </h1>
-          <p className="text-sm text-zinc-500 dark:text-zinc-400">
-            Voice memos → structured sales notes
-          </p>
+          <div className="flex items-center gap-4">
+            <p className="hidden sm:block text-sm text-zinc-500 dark:text-zinc-400">
+              Voice memos → structured sales notes
+            </p>
+            <AccountMenu />
+          </div>
         </div>
       </header>
 

@@ -1,41 +1,49 @@
-// Client-side memo persistence + retrieval.
+"use client";
+
+// Per-user memo persistence + retrieval via Firestore.
 //
-// Memos live in localStorage under a single key. Retrieval is intentionally simple:
-// we extract company hints from the current memo and substring-match against past
-// memos. Vector embeddings would be a fine upgrade later, but for tens-to-hundreds of
-// memos a single salesperson would realistically accumulate, naive matching is honest
-// and debuggable.
+// Memos live at users/{uid}/memos/{memoId}. Security rules (firestore.rules)
+// enforce that only the signed-in owner can read/write their subtree.
+//
+// Retrieval is intentionally simple: extract company hints from the current
+// memo, substring-match against past memos. Vector embeddings would be a fine
+// upgrade later, but for tens-to-hundreds of memos a salesperson would
+// realistically accumulate, naive matching is honest and debuggable.
 
-import type { Memo, Extraction } from "./schema";
+import {
+  collection,
+  deleteDoc,
+  doc,
+  getDocs,
+  orderBy,
+  query,
+  setDoc,
+} from "firebase/firestore";
+import { auth, db } from "./firebase";
+import type { Extraction, Memo } from "./schema";
 
-const STORAGE_KEY = "salescribe:memos";
 const MAX_RELATED = 3;
 
-export function loadMemos(): Memo[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as Memo[]) : [];
-  } catch {
-    return [];
-  }
+function memosCollection() {
+  const uid = auth.currentUser?.uid;
+  if (!uid) throw new Error("Not signed in");
+  return collection(db, "users", uid, "memos");
 }
 
-export function saveMemo(memo: Memo): void {
-  if (typeof window === "undefined") return;
-  const memos = loadMemos();
-  // De-dupe by id (in case finalize is hit twice).
-  const filtered = memos.filter((m) => m.id !== memo.id);
-  filtered.unshift(memo);
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(filtered));
+export async function loadMemos(): Promise<Memo[]> {
+  const uid = auth.currentUser?.uid;
+  if (!uid) return [];
+  const q = query(memosCollection(), orderBy("created_iso", "desc"));
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => d.data() as Memo);
 }
 
-export function deleteMemo(id: string): void {
-  if (typeof window === "undefined") return;
-  const memos = loadMemos().filter((m) => m.id !== id);
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(memos));
+export async function saveMemo(memo: Memo): Promise<void> {
+  await setDoc(doc(memosCollection(), memo.id), memo);
+}
+
+export async function deleteMemo(id: string): Promise<void> {
+  await deleteDoc(doc(memosCollection(), id));
 }
 
 export function newMemoId(): string {
@@ -45,7 +53,8 @@ export function newMemoId(): string {
   return `memo-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-// Pulls every company-ish string we can find in an extraction.
+// Pure-logic retrieval. No Firestore access — operates on whatever memo list
+// you give it. The page fetches all memos once on mount and filters in-memory.
 function companyHintsFor(ex: Extraction): string[] {
   const hints = new Set<string>();
   if (ex.deal?.company) hints.add(ex.deal.company.toLowerCase());
@@ -55,8 +64,6 @@ function companyHintsFor(ex: Extraction): string[] {
   return Array.from(hints);
 }
 
-// Returns past memos that share a company hint with the current extraction.
-// Most recent first, capped at MAX_RELATED.
 export function findRelatedMemos(current: Extraction, all: Memo[]): Memo[] {
   const currentHints = companyHintsFor(current);
   if (currentHints.length === 0) return [];
