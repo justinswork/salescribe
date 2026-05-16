@@ -330,9 +330,6 @@ function SalescribeApp() {
             </span>
           </button>
           <div className="flex items-center gap-2">
-            <p className="hidden md:block text-sm text-zinc-500 dark:text-zinc-400 mr-2">
-              Voice memos → structured sales notes
-            </p>
             <ThemeToggle />
             <AccountMenu />
           </div>
