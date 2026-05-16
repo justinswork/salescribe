@@ -8,7 +8,7 @@ A traveling B2B salesperson dictates a memo between meetings. Salescribe transcr
 
 ## Live demo
 
-Deployed at: **(URL will be added after Vercel deploy)**
+Deployed at: **(URL will be added after Firebase App Hosting deploy)**
 
 ## How it works
 
@@ -17,18 +17,51 @@ audio blob ─▶ /api/transcribe (Whisper)
               │
               └─▶ transcript ─▶ /api/extract (Claude Sonnet 4.6 + tool_use)
                                 │
-                                └─▶ extraction JSON ─▶ /api/followup (Claude Sonnet 4.6 + tool_use)
-                                                       │
-                                                       ├─▶ next coaching question  ─▶ user replies ─▶ loop
-                                                       └─▶ done=true
+                                ├─▶ retrieve past memos for same company (localStorage)
+                                │
+                                └─▶ extraction + related memos ─▶ /api/followup (Claude + tool_use)
+                                                                  │
+                                                                  ├─▶ question_type="gap"  ▶ asks about checklist item
+                                                                  ├─▶ question_type="history" ▶ asks about a past-memo fact
+                                                                  └─▶ done=true ▶ persist memo to localStorage
 ```
 
 Two separate system prompts power the app:
 
 - **`EXTRACTOR_SYSTEM`** — schema-driven, low-creativity, hard rule "never invent facts." Returns structured JSON via Anthropic's `tool_use`.
-- **`COACH_SYSTEM`** — warm and conversational. Grounded against a *completeness checklist* (WHO / WHAT / WHY NOW / BUDGET / DECISION / COMPETITION / OBJECTIONS / NEXT STEP / TIMELINE) and asked to pick the single most valuable gap.
+- **`COACH_SYSTEM`** — warm and conversational. Grounded against a *completeness checklist* (WHO / WHAT / WHY NOW / BUDGET / DECISION / COMPETITION / OBJECTIONS / NEXT STEP / TIMELINE) and, when available, *related past memos* retrieved from local memory. Each turn the coach acts as a small agent: it picks `question_type=gap` (fill a checklist item) or `question_type=history` (reference a past-memo fact that may have evolved), and reports its choice.
 
 Both live in [`src/lib/prompts.ts`](src/lib/prompts.ts).
+
+## Syllabus coverage
+
+| Course objective | Where it shows up |
+|---|---|
+| **Prompt engineering** | Two purpose-built prompts in `src/lib/prompts.ts` with documented iteration history below. |
+| **System prompts** | Distinct extractor (clinical, schema-bound) and coach (warm, agentic) system prompts — different voice, scope, rules. |
+| **Grounding** | Completeness checklist injected into the coach. `reference_now_iso` injected into the extractor for honest relative-date math. |
+| **Retrieval-augmented generation (RAG)** | After each extraction, [`src/lib/storage.ts`](src/lib/storage.ts) retrieves past memos that share a company hint with the current memo and passes them as context to the coach. The retrieval is intentionally simple (substring match on company name) rather than vector-based — debuggable, no embedding store needed. |
+| **LLM memory** | Memos persist in `localStorage` across sessions. A "Recent memos" sidebar lets you revisit any prior memo and the coach has access to them as retrieved context. |
+| **Agents** | The coach is an agent in the lightweight sense: each turn it observes (transcript + extraction + chat + retrieved memos), chooses an action type (`gap` / `history` / `none`), and acts. The chosen action type surfaces in the UI as a subtle "↻ referencing a past memo" label when applicable. |
+| **Multi-model use** | OpenAI Whisper (transcription) + Anthropic Claude Sonnet 4.6 (extraction & coaching). Two vendors, distinct strengths. |
+| **Tool / MCP use** | Anthropic `tool_use` with forced `tool_choice` for both extraction (`submit_extraction`) and coaching (`submit_followup`). Treats the JSON schema as a contract instead of hoping freeform JSON parses. |
+| **Evaluation** | 5-case eval harness in [`evals/`](evals/) with per-check assertions that probe specific behaviors (date math, anti-fabrication, self-correction, no-deal-no-deal-fields). |
+| **Disciplinary application** | B2B sales workflow — the completeness checklist is sales-specific (WHO/WHAT/BUDGET/DECISION/COMPETITION/etc.), so the project lives in a real discipline rather than being a generic chatbot. |
+
+## Deploying
+
+Hosted on **Firebase App Hosting**. One-time setup:
+
+```bash
+npm install -g firebase-tools
+firebase login
+firebase init apphosting          # connect a Firebase project; pick a backend region
+firebase apphosting:secrets:set ANTHROPIC_API_KEY    # paste the key when prompted
+firebase apphosting:secrets:set OPENAI_API_KEY
+firebase deploy --only apphosting
+```
+
+Config lives in [apphosting.yaml](apphosting.yaml). Subsequent deploys = `firebase deploy --only apphosting` (or auto-deploy by pushing to the branch you connected in the console).
 
 ## Running locally
 
@@ -52,9 +85,13 @@ npm run dev            # in one terminal
 npm run eval           # in another
 ```
 
-Set `SALESCRIBE_URL=https://your-deploy.example.com` to eval the deployed version instead of localhost.
+Set `SALESCRIBE_URL=https://your-backend.web.app` to eval the deployed version instead of localhost.
 
 ### What the eval set probes
+
+The current suite is **12 cases / 43 checks**, split between extraction tests (hit `/api/extract`) and coach tests (hit `/api/followup`). It runs against the live API — these are not unit tests over mocks.
+
+**Extraction (cases 01–09):**
 
 | Case | What it stresses |
 |------|------------------|
@@ -63,6 +100,20 @@ Set `SALESCRIBE_URL=https://your-deploy.example.com` to eval the deployed versio
 | `03-calendar-event-only` | Relative date math, attendee parsing, location capture |
 | `04-self-correction` | Honors mid-sentence corrections ("Tuesday — actually Wednesday") |
 | `05-vague-memo-no-fabrication` | Anti-hallucination: vague memo must produce mostly empty fields |
+| `06-multi-event-day` | Splits a single utterance into 3 distinct calendar events at different times |
+| `07-implicit-pain-and-budget` | Captures pain narrative without inventing a dollar figure when none was named |
+| `08-strong-language-classified-as-objection` | Classifies "deal-breaker" language correctly, names Salesforce as competitor |
+| `09-multi-company-disambiguation` | Doesn't confuse the prospect's company with a tangential reference ("Tom over at Bay State, back when she was there") |
+
+**Coach (cases 10–12) — tests the agentic + RAG layer:**
+
+| Case | What it stresses |
+|------|------------------|
+| `10-coach-picks-gap-when-no-memory` | With no past memos, coach picks `question_type=gap` and writes a brief, filler-free question |
+| `11-coach-picks-history-when-stale-fact` | With a relevant past memo containing budget/competitor info absent from today's memo, coach picks `question_type=history` and references a past-memo fact |
+| `12-coach-stops-at-question-cap` | After 3 prior assistant turns, coach must declare `done=true`, empty question, `question_type=none` |
+
+**Current result: 43/43 passing against Claude Sonnet 4.6 + Whisper.**
 
 ## Build log
 
@@ -84,18 +135,40 @@ That's what makes the *follow-up* layer the centerpiece. The extraction is suppo
 
 **3-question cap, enforced in code.** The prompt says "after at most 3 follow-up questions, set done=true," but I also enforce the cap server-side in `/api/followup`. Belt-and-suspenders: the model is consistent enough about this, but a runaway question loop is the kind of failure mode that would be annoying live, so it's worth the redundancy.
 
-### Iterations against the eval set
+### Iteration
 
-- **v1 (no `reference_now_iso`):** Failed `03-calendar-event-only` and `04-self-correction` because the model anchored to its training cutoff for "tomorrow." Fix: inject the current ISO timestamp.
-- **v1 (no anti-fabrication rule):** Failed `05-vague-memo-no-fabrication` — the model invented a company name from "had a good call." Fix: explicit "NEVER invent facts" rule, plus the schema permits null on every field.
-- **v1 coach prompt:** Asked multi-part questions and praised the user ("Great memo! Quick thing — what's the budget? Also who's the decision-maker?"). Fix: explicit rules "one question, max 20 words" and "Never start with 'Great memo!' or similar filler."
+Honesty note up front: when I finally ran the eval suite against live APIs, **v1 of the prompts passed 43/43**. The iteration story here is therefore *forward iteration during design*, not *backward iteration from observed failures* — I made each design choice anticipating a specific failure mode and the choices held up. The eval set is the evidence that they hold up; without it I'd just have plausible-sounding prompts and no proof.
+
+**Design iterations baked into v1:**
+
+1. **Split single prompt into Extractor + Coach.** Initial mental sketch had one prompt that did both. Anticipated failure: extractions would get chatty (preambles, hedges) and the coach would get clinical. Pre-empted by splitting before any code was written.
+2. **`tool_use` with forced `tool_choice` instead of "respond with JSON."** Anticipated failure: occasional markdown fences, preambles like "Here's the JSON:", parse errors. Pre-empted with hard schema contract.
+3. **`reference_now_iso` injected into the user message.** Anticipated failure: relative dates anchored to model's training cutoff. This was what convinced me to also write the `03-calendar-event-only` and `04-self-correction` cases.
+4. **Explicit "NEVER invent facts" rule + nullable schema.** Anticipated failure: model fabricates a company name from a vague memo. Wrote case `05` specifically to catch this.
+5. **Belt-and-suspenders 3-question cap.** Both prompted ("at most 3 follow-ups") AND server-enforced. Anticipated failure: runaway question loop is a user-trust killer. Wrote case `12` to verify the server-side cap.
+6. **Surface `question_type` in the coach output.** Without making the agentic choice externally visible, the RAG layer is invisible — history-mode questions just look like coincidence. Case `11` verifies the model is actually using retrieved past memos, not just lucky guesses.
+
+**Where I'd actually expect failures (untested or borderline):**
+
+- Memos longer than ~2 minutes (~300 words) — the eval cases are all short. Long memos might trigger the coach to ask about something deep in the transcript.
+- Memos with disfluencies and false starts ("uh, so the, the meeting, with, with Karen, was Thursday I think"). Whisper smooths these, but the structured Whisper output is cleaner than raw human speech.
+- Heavy proper-noun memos: Whisper transcribes common names well; obscure company names get mangled and the extraction inherits it. The system can't fix what wasn't in the transcript.
+- Multi-vertical / multi-deal memos in a single recording. The schema assumes one deal context per memo.
+
+### Memory & retrieval design notes
+
+- **Why `localStorage` instead of a database.** A single-user demo doesn't need a server-side store. Keeping memos in the browser means zero infrastructure, no auth flow, and the demo is fully self-contained. For production this would obviously move server-side per-user.
+- **Why substring company-match instead of vector retrieval.** For tens-to-hundreds of memos one salesperson would realistically accumulate, naive matching is honest and debuggable. Embeddings would be a fine upgrade but the marginal value over substring matching is small at that scale, and the failure modes of substring retrieval are easier to see.
+- **Why compact past memos before sending to the coach.** Full transcripts of every past memo would bloat the context window. [`compactMemo()` in `/api/followup`](src/app/api/followup/route.ts) trims to summary + deal + contacts + open reminders — the load-bearing fields for "is something about this prospect different today?"
+- **Why surface the `question_type` in the UI.** A "↻ referencing a past memo" label on the coach's bubble is what makes the agent loop *visible*. Without it, history-mode questions just look like the coach got lucky. With it, the user can see the retrieval-and-decide step.
 
 ### What I'd do next
 
 - **Calendar export.** Right now extracted events live in the UI. Adding `.ics` download or a Google Calendar OAuth link would close the loop.
-- **Speaker-side voice replies.** The follow-up is text-only; the demo asks you to type. A voice reply mode would be a more honest demo of the use case.
-- **Memo history.** No persistence right now. Adding a sidebar of past memos (even just `localStorage`) would make repeat use feel real.
-- **Vertical drift.** "Sales coach" is a strong demo because it's specific, but the same pattern works for therapist intake notes, doctor visit recaps, parent-teacher conference notes, anything where a structured memo benefits from a domain checklist.
+- **Server-side memos with auth.** Move from localStorage to per-user storage so memos sync across devices.
+- **Vector retrieval over the past-memo store.** Once a user has 50+ memos, semantic similarity will beat substring matching for finding "the last time we talked about pricing."
+- **MCP integration.** Connect a real calendar MCP server so the agent can not just *ask* about a meeting but actually create it.
+- **Vertical drift.** "Sales coach" is a strong demo because it's specific, but the same pattern works for therapist intake notes, doctor visit recaps, parent-teacher conference notes — anywhere a structured memo benefits from a domain checklist plus memory.
 
 ### Where it breaks
 
@@ -109,7 +182,7 @@ That's what makes the *follow-up* layer the centerpiece. The extraction is suppo
 - **OpenAI Whisper** (`whisper-1`) for transcription
 - **Anthropic Claude Sonnet 4.6** (`claude-sonnet-4-6`) for extraction and follow-up
 - **Tailwind v4** for UI
-- **Vercel** for hosting
+- **Firebase App Hosting** for deployment (Cloud Run under the hood)
 
 ## Code structure
 
@@ -119,16 +192,19 @@ src/
 │   ├── api/
 │   │   ├── transcribe/route.ts   # Whisper
 │   │   ├── extract/route.ts      # Claude extractor + tool_use
-│   │   └── followup/route.ts     # Claude coach + tool_use
+│   │   └── followup/route.ts     # Claude coach + tool_use + RAG injection
 │   ├── layout.tsx
-│   └── page.tsx                  # main UI + state machine
+│   └── page.tsx                  # main UI + state machine + memory persistence
 ├── components/
 │   ├── Recorder.tsx              # MediaRecorder client component
-│   └── ExtractionView.tsx        # renders the structured fields
+│   ├── ExtractionView.tsx        # renders the structured fields
+│   ├── MemoHistory.tsx           # past-memos sidebar
+│   └── RelatedMemos.tsx          # in-memo retrieval callout
 └── lib/
     ├── clients.ts                # SDK clients + model IDs
     ├── prompts.ts                # both system prompts + completeness checklist
-    └── schema.ts                 # JSON Schemas + mirrored TS types
+    ├── schema.ts                 # JSON Schemas + mirrored TS types
+    └── storage.ts                # localStorage memo persistence + retrieval
 evals/
 ├── cases.mjs                     # eval set
 └── run.mjs                       # eval runner

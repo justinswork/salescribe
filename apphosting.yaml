@@ -1,0 +1,25 @@
+# Firebase App Hosting configuration.
+# See: https://firebase.google.com/docs/app-hosting/configure
+#
+# Secrets are managed in Google Secret Manager. Create them with:
+#   firebase apphosting:secrets:set ANTHROPIC_API_KEY
+#   firebase apphosting:secrets:set OPENAI_API_KEY
+# (The CLI prompts for the value and grants access to the App Hosting service account.)
+
+runConfig:
+  cpu: 1
+  memoryMiB: 512
+  minInstances: 0
+  maxInstances: 10
+  concurrency: 80
+  # Cloud Run default request timeout (5 min) is plenty for our Whisper + Claude calls.
+
+env:
+  - variable: ANTHROPIC_API_KEY
+    secret: ANTHROPIC_API_KEY
+    availability:
+      - RUNTIME
+  - variable: OPENAI_API_KEY
+    secret: OPENAI_API_KEY
+    availability:
+      - RUNTIME

@@ -106,13 +106,19 @@ export const followupToolSchema = {
         description:
           "The next question to ask the salesperson. Empty string when done=true.",
       },
+      question_type: {
+        type: "string",
+        enum: ["gap", "history", "none"],
+        description:
+          "gap = filling a completeness-checklist item; history = referencing a past memo about this prospect; none = done=true.",
+      },
       reasoning_internal: {
         type: "string",
         description:
-          "1-sentence rationale: which gap from the checklist this targets and why this one now. For debugging — not shown to the user.",
+          "1-sentence rationale: which gap or which past-memo signal drove this question, and why this is the most valuable thing to ask now. For debugging — not shown to the user.",
       },
     },
-    required: ["done", "question", "reasoning_internal"],
+    required: ["done", "question", "question_type", "reasoning_internal"],
   },
 };
 
@@ -149,10 +155,19 @@ export type Extraction = {
 export type FollowupResult = {
   done: boolean;
   question: string;
+  question_type: "gap" | "history" | "none";
   reasoning_internal: string;
 };
 
 export type ChatMessage = {
   role: "assistant" | "user";
   content: string;
+};
+
+export type Memo = {
+  id: string;
+  created_iso: string;
+  transcript: string;
+  extraction: Extraction;
+  chat: ChatMessage[];
 };

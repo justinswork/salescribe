@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { anthropic, MODELS } from "@/lib/clients";
 import { COACH_SYSTEM } from "@/lib/prompts";
-import { followupToolSchema, type Extraction, type ChatMessage, type FollowupResult } from "@/lib/schema";
+import { followupToolSchema, type Extraction, type ChatMessage, type FollowupResult, type Memo } from "@/lib/schema";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -10,12 +10,25 @@ type Body = {
   transcript: string;
   extraction: Extraction;
   chat: ChatMessage[];
+  related_past_memos?: Memo[];
 };
 
 const MAX_FOLLOWUPS = 3;
 
+// Trim a past memo to just the fields useful for grounding, so we don't blow the
+// context window on long transcripts that won't help the coach decide what to ask.
+function compactMemo(m: Memo): object {
+  return {
+    date: m.created_iso,
+    summary: m.extraction.summary,
+    deal: m.extraction.deal,
+    contacts: m.extraction.contacts,
+    open_reminders: m.extraction.reminders,
+  };
+}
+
 export async function POST(req: NextRequest) {
-  const { transcript, extraction, chat } = (await req.json()) as Body;
+  const { transcript, extraction, chat, related_past_memos = [] } = (await req.json()) as Body;
 
   if (!transcript || !extraction) {
     return Response.json({ error: "Missing transcript or extraction." }, { status: 400 });
@@ -26,6 +39,7 @@ export async function POST(req: NextRequest) {
     const result: FollowupResult = {
       done: true,
       question: "",
+      question_type: "none",
       reasoning_internal: "Hit the 3-question cap; stopping to respect the salesperson's time.",
     };
     return Response.json({ result });
@@ -38,6 +52,12 @@ export async function POST(req: NextRequest) {
           .join("\n")
       : "(no dialogue yet)";
 
+  const pastBlock =
+    related_past_memos.length > 0
+      ? `\n\nRelated past memos for this prospect/company (most recent first):
+${JSON.stringify(related_past_memos.map(compactMemo), null, 2)}`
+      : "";
+
   const userContent = `Original transcript:
 ${transcript}
 
@@ -45,9 +65,9 @@ Extracted fields (JSON):
 ${JSON.stringify(extraction, null, 2)}
 
 Dialogue so far:
-${dialogue}
+${dialogue}${pastBlock}
 
-Decide: is the note reasonably complete? If yes, set done=true. If no, ask the single most valuable follow-up question.`;
+Decide: is the note reasonably complete? If yes, set done=true. If no, choose question_type and ask the single most valuable follow-up.`;
 
   const response = await anthropic.messages.create({
     model: MODELS.coach,

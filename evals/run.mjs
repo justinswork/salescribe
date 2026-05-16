@@ -1,10 +1,9 @@
-// Eval runner. Hits the /api/extract endpoint on a running dev server (or whatever
-// SALESCRIBE_URL is set to) and reports per-check pass/fail.
+// Eval runner. Hits /api/extract (default) or /api/followup against a running server.
 //
 // Usage:
 //   1. `npm run dev` in one terminal
 //   2. `node evals/run.mjs` in another
-//      or `SALESCRIBE_URL=https://your-deploy.vercel.app node evals/run.mjs`
+//      or `SALESCRIBE_URL=https://your-deploy.example.com node evals/run.mjs`
 
 import { cases } from "./cases.mjs";
 
@@ -23,6 +22,43 @@ function color(c, s) {
   return process.stdout.isTTY ? `${COLORS[c]}${s}${COLORS.reset}` : s;
 }
 
+async function runExtractCase(c) {
+  const r = await fetch(`${URL}/api/extract`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      transcript: c.transcript,
+      chat: [],
+      reference_now_iso: c.reference_now_iso,
+    }),
+  });
+  if (!r.ok) {
+    const body = await r.text();
+    throw new Error(`HTTP ${r.status}: ${body}`);
+  }
+  const data = await r.json();
+  return data.extraction;
+}
+
+async function runFollowupCase(c) {
+  const r = await fetch(`${URL}/api/followup`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      transcript: c.transcript,
+      extraction: c.extraction,
+      chat: c.chat || [],
+      related_past_memos: c.related_past_memos || [],
+    }),
+  });
+  if (!r.ok) {
+    const body = await r.text();
+    throw new Error(`HTTP ${r.status}: ${body}`);
+  }
+  const data = await r.json();
+  return data.result;
+}
+
 let totalChecks = 0;
 let passedChecks = 0;
 const failures = [];
@@ -30,27 +66,11 @@ const failures = [];
 for (const c of cases) {
   process.stdout.write(`\n${color("bold", c.id)}\n`);
 
-  let extraction;
+  let payload;
   try {
-    const r = await fetch(`${URL}/api/extract`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        transcript: c.transcript,
-        chat: [],
-        reference_now_iso: c.reference_now_iso,
-      }),
-    });
-    if (!r.ok) {
-      const body = await r.text();
-      console.log(`  ${color("red", "REQUEST FAILED")} (${r.status}): ${body}`);
-      failures.push({ case: c.id, check: "<request>", message: `${r.status}: ${body}` });
-      continue;
-    }
-    const data = await r.json();
-    extraction = data.extraction;
+    payload = c.type === "followup" ? await runFollowupCase(c) : await runExtractCase(c);
   } catch (e) {
-    console.log(`  ${color("red", "REQUEST THREW")}: ${e.message}`);
+    console.log(`  ${color("red", "REQUEST FAILED")}: ${e.message}`);
     failures.push({ case: c.id, check: "<request>", message: e.message });
     continue;
   }
@@ -59,7 +79,7 @@ for (const c of cases) {
     totalChecks++;
     let result;
     try {
-      result = fn(extraction);
+      result = fn(payload);
     } catch (e) {
       result = `threw: ${e.message}`;
     }

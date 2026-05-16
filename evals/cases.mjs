@@ -118,4 +118,278 @@ export const cases = [
       },
     },
   },
+  {
+    id: "06-multi-event-day",
+    transcript:
+      "Tomorrow's packed. At 9 I'm seeing Tom at TechCo, then I've got lunch with Sarah at 12:30 — we're meeting at that Italian place near her office. Back to TechCo at 3 for the CFO meeting with Patricia.",
+    reference_now_iso: "2026-05-15T08:00:00-04:00",
+    checks: {
+      "three distinct events extracted": (e) =>
+        e.calendar_events.length === 3 ? null : `got ${e.calendar_events.length} events`,
+      "first event at 9am with Tom": (e) => {
+        const ev = e.calendar_events[0];
+        if (!ev) return "no first event";
+        const okTime = /^2026-05-16T09/.test(ev.start_iso);
+        const okPerson = (ev.attendees || []).join(" ").toLowerCase().includes("tom") ||
+          (ev.title || "").toLowerCase().includes("tom") ||
+          (ev.notes || "").toLowerCase().includes("tom");
+        return okTime && okPerson ? null : `got start=${ev.start_iso}, attendees=${JSON.stringify(ev.attendees)}, title=${ev.title}`;
+      },
+      "lunch event at 12:30 with Sarah": (e) => {
+        const lunch = e.calendar_events.find((ev) =>
+          /^2026-05-16T12:?3/.test(ev.start_iso),
+        );
+        if (!lunch) return "no event at 12:30";
+        const okPerson = (lunch.attendees || []).join(" ").toLowerCase().includes("sarah") ||
+          (lunch.title || "").toLowerCase().includes("sarah");
+        return okPerson ? null : `lunch attendees=${JSON.stringify(lunch.attendees)}, title=${lunch.title}`;
+      },
+      "CFO meeting at 3pm with Patricia": (e) => {
+        const cfo = e.calendar_events.find((ev) =>
+          /^2026-05-16T15/.test(ev.start_iso),
+        );
+        if (!cfo) return "no 3pm event";
+        const okPerson = (cfo.attendees || []).join(" ").toLowerCase().includes("patricia") ||
+          (cfo.title || "").toLowerCase().includes("patricia") ||
+          (cfo.notes || "").toLowerCase().includes("patricia");
+        return okPerson ? null : `3pm attendees=${JSON.stringify(cfo.attendees)}, title=${cfo.title}`;
+      },
+    },
+  },
+  {
+    id: "07-implicit-pain-and-budget",
+    transcript:
+      "Karen at Northwind was pretty frustrated today. She kept complaining about how their current vendor keeps missing deadlines and it's been costing them real money on customer churn. She didn't quote a number but she made it crystal clear price is going to be a big factor in this decision.",
+    reference_now_iso: "2026-05-15T14:00:00-04:00",
+    checks: {
+      "deal captures stated problem (vendor missing deadlines)": (e) => {
+        const problem = (e.deal?.stated_problem || "").toLowerCase();
+        return /(vendor|deadline|miss|churn)/.test(problem)
+          ? null
+          : `stated_problem=${e.deal?.stated_problem}`;
+      },
+      "deal captures price-sensitivity in objections or budget_signals": (e) => {
+        const blob = `${e.deal?.objections || ""} ${e.deal?.budget_signals || ""}`.toLowerCase();
+        return /(price|cost|budget|factor)/.test(blob)
+          ? null
+          : `objections=${e.deal?.objections}, budget_signals=${e.deal?.budget_signals}`;
+      },
+      "no invented price number": (e) => {
+        const blob = `${e.deal?.budget_signals || ""} ${e.summary || ""}`;
+        const hasDollarFigure = /\$\d|\d[,\.]\d{3}|\d+k\b/i.test(blob);
+        return hasDollarFigure ? "fabricated a dollar figure" : null;
+      },
+    },
+  },
+  {
+    id: "09-multi-company-disambiguation",
+    transcript:
+      "Talked to Karen at Northwind today. She mentioned they used to work with Tom over at Bay State Freight back when she was there a few years ago. Anyway, the deal is moving forward — she said their CFO Marcus needs to sign off and they're hoping to wrap by end of quarter.",
+    reference_now_iso: "2026-05-15T14:00:00-04:00",
+    checks: {
+      "deal.company is Northwind (not Bay State)": (e) => {
+        const c = (e.deal?.company || "").toLowerCase();
+        return /northwind/.test(c) && !/bay state/.test(c)
+          ? null
+          : `deal.company=${e.deal?.company}`;
+      },
+      "Karen tagged as Northwind, not Bay State": (e) => {
+        const karen = e.contacts.find((x) => /karen/i.test(x.name));
+        if (!karen) return "no Karen in contacts";
+        const co = (karen.company || "").toLowerCase();
+        return /northwind/.test(co) && !/bay state/.test(co)
+          ? null
+          : `Karen.company=${karen.company}`;
+      },
+      "Tom tagged as Bay State (the tangential reference), not Northwind": (e) => {
+        const tom = e.contacts.find((x) => /tom/i.test(x.name));
+        if (!tom) return "Tom not extracted at all";
+        const co = (tom.company || "").toLowerCase();
+        return /bay state/.test(co) ? null : `Tom.company=${tom.company}`;
+      },
+      "Marcus is captured as a Northwind decision-maker": (e) => {
+        const dm = (e.deal?.decision_makers || "").toLowerCase();
+        const marcusContact = e.contacts.find((x) => /marcus/i.test(x.name));
+        const marcusInDM = /marcus/.test(dm);
+        const marcusNorthwind = marcusContact && /northwind/i.test(marcusContact.company || "");
+        return marcusInDM || marcusNorthwind
+          ? null
+          : `decision_makers=${e.deal?.decision_makers}, marcusContact=${JSON.stringify(marcusContact)}`;
+      },
+    },
+  },
+  {
+    id: "08-strong-language-classified-as-objection",
+    transcript:
+      "Met with the team at Initech. Bill thinks our reporting is way too clunky compared to what they get from Salesforce. He literally said 'this is a deal-breaker for us unless you can show me a roadmap'. Need to follow up by next Friday with our product team's response.",
+    reference_now_iso: "2026-05-15T14:00:00-04:00",
+    checks: {
+      "objection captures the deal-breaker / reporting complaint": (e) => {
+        const obj = (e.deal?.objections || "").toLowerCase();
+        return /(report|clunky|deal.?break|roadmap)/.test(obj)
+          ? null
+          : `objections=${e.deal?.objections}`;
+      },
+      "Salesforce shows up as a competitor": (e) => {
+        const comp = (e.deal?.competitors || "").toLowerCase();
+        return /salesforce/.test(comp) ? null : `competitors=${e.deal?.competitors}`;
+      },
+      "next-step due is Friday 2026-05-22": (e) => {
+        const iso = e.deal?.next_step_due_iso || "";
+        return /^2026-05-22/.test(iso) ? null : `next_step_due_iso=${iso}`;
+      },
+    },
+  },
+  // -----------------------------
+  // Coach-side tests (POST /api/followup directly).
+  // Probe the agentic question_type choice and the RAG-grounded "history" mode.
+  // -----------------------------
+  {
+    id: "10-coach-picks-gap-when-no-memory",
+    type: "followup",
+    transcript:
+      "Quick one — talked to Karen at Northwind. They want a demo next Tuesday.",
+    extraction: {
+      summary: "Karen at Northwind requested a demo next Tuesday.",
+      calendar_events: [
+        {
+          title: "Demo with Karen at Northwind",
+          start_iso: "2026-05-26T14:00:00-04:00",
+          end_iso: null,
+          location: null,
+          attendees: ["Karen"],
+          notes: null,
+        },
+      ],
+      reminders: [],
+      contacts: [{ name: "Karen", role: null, company: "Northwind", notes: null }],
+      deal: {
+        company: "Northwind",
+        prospect_name: "Karen",
+        stated_problem: null,
+        budget_signals: null,
+        decision_makers: null,
+        objections: null,
+        competitors: null,
+        next_step: "Demo next Tuesday",
+        next_step_due_iso: "2026-05-26T14:00:00-04:00",
+      },
+    },
+    chat: [],
+    related_past_memos: [],
+    checks: {
+      "not done — there are obvious gaps": (r) =>
+        r.done === false ? null : "coach prematurely declared done",
+      "picks question_type=gap": (r) =>
+        r.question_type === "gap" ? null : `question_type=${r.question_type}`,
+      "question is brief (<=25 words)": (r) => {
+        const wc = r.question.trim().split(/\s+/).length;
+        return wc <= 25 ? null : `question is ${wc} words: "${r.question}"`;
+      },
+      "no filler intro": (r) => {
+        const opening = r.question.trim().toLowerCase();
+        return /^(great|nice|awesome|good memo|wow|thanks|love)/.test(opening)
+          ? `opens with filler: "${r.question}"`
+          : null;
+      },
+    },
+  },
+  {
+    id: "11-coach-picks-history-when-stale-fact",
+    type: "followup",
+    transcript: "Caught up with Karen at Northwind again. Demo went well.",
+    extraction: {
+      summary: "Karen at Northwind: demo went well.",
+      calendar_events: [],
+      reminders: [],
+      contacts: [{ name: "Karen", role: null, company: "Northwind", notes: null }],
+      deal: {
+        company: "Northwind",
+        prospect_name: "Karen",
+        stated_problem: null,
+        budget_signals: null,
+        decision_makers: null,
+        objections: null,
+        competitors: null,
+        next_step: null,
+        next_step_due_iso: null,
+      },
+    },
+    chat: [],
+    related_past_memos: [
+      {
+        id: "past-1",
+        created_iso: "2026-05-01T14:00:00-04:00",
+        transcript:
+          "Met with Karen at Northwind. They're looking at 30-40K budget for the first year. CFO Marcus needs to sign off. Also evaluating FleetIO.",
+        extraction: {
+          summary: "Karen at Northwind, 30-40K budget, CFO Marcus involved, evaluating FleetIO.",
+          calendar_events: [],
+          reminders: [],
+          contacts: [
+            { name: "Karen", role: null, company: "Northwind", notes: null },
+            { name: "Marcus", role: "CFO", company: "Northwind", notes: null },
+          ],
+          deal: {
+            company: "Northwind",
+            prospect_name: "Karen",
+            stated_problem: "Spreadsheet sprawl on dispatch.",
+            budget_signals: "30-40K for first year",
+            decision_makers: "Karen + CFO Marcus",
+            objections: null,
+            competitors: "FleetIO",
+            next_step: null,
+            next_step_due_iso: null,
+          },
+        },
+        chat: [],
+      },
+    ],
+    checks: {
+      "picks question_type=history (referencing past fact)": (r) =>
+        r.question_type === "history"
+          ? null
+          : `question_type=${r.question_type}, question="${r.question}"`,
+      "question references a past-memo fact (budget, Marcus, FleetIO, or pricing)": (r) => {
+        const q = r.question.toLowerCase();
+        return /(budget|30|40|marcus|cfo|fleetio|price|pricing|spreadsheet|dispatch)/.test(q)
+          ? null
+          : `question="${r.question}"`;
+      },
+      "question is brief (<=25 words)": (r) => {
+        const wc = r.question.trim().split(/\s+/).length;
+        return wc <= 25 ? null : `question is ${wc} words`;
+      },
+    },
+  },
+  {
+    id: "12-coach-stops-at-question-cap",
+    type: "followup",
+    transcript: "Quick one — talked to Karen at Northwind.",
+    extraction: {
+      summary: "Karen at Northwind.",
+      calendar_events: [],
+      reminders: [],
+      contacts: [{ name: "Karen", role: null, company: "Northwind", notes: null }],
+      deal: null,
+    },
+    // 3 prior assistant turns means we should be at the cap.
+    chat: [
+      { role: "assistant", content: "What's their stated problem?" },
+      { role: "user", content: "Dispatch issues." },
+      { role: "assistant", content: "Any budget signals?" },
+      { role: "user", content: "Not yet." },
+      { role: "assistant", content: "Who decides?" },
+      { role: "user", content: "Karen plus their CFO." },
+    ],
+    related_past_memos: [],
+    checks: {
+      "coach declares done=true at the 3-question cap": (r) =>
+        r.done === true ? null : `done=${r.done}, question="${r.question}"`,
+      "question is empty when done": (r) =>
+        r.question === "" ? null : `question="${r.question}"`,
+      "question_type=none when done": (r) =>
+        r.question_type === "none" ? null : `question_type=${r.question_type}`,
+    },
+  },
 ];

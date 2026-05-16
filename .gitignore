@@ -34,8 +34,13 @@ yarn-error.log*
 .env*
 !.env*.example
 
-# vercel
+# vercel (kept harmlessly even though we deploy to Firebase)
 .vercel
+
+# firebase
+.firebase
+firebase-debug.log
+.runtimeconfig.json
 
 # typescript
 *.tsbuildinfo

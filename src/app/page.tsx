@@ -1,9 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Recorder from "@/components/Recorder";
 import ExtractionView from "@/components/ExtractionView";
-import type { ChatMessage, Extraction, FollowupResult } from "@/lib/schema";
+import MemoHistory from "@/components/MemoHistory";
+import RelatedMemos from "@/components/RelatedMemos";
+import type { ChatMessage, Extraction, FollowupResult, Memo } from "@/lib/schema";
+import { loadMemos, saveMemo, deleteMemo, newMemoId, findRelatedMemos } from "@/lib/storage";
 
 type Status = "idle" | "transcribing" | "extracting" | "coaching" | "ready_for_reply" | "done" | "error";
 
@@ -15,10 +18,22 @@ export default function Home() {
   const [extraction, setExtraction] = useState<Extraction | null>(null);
   const [chat, setChat] = useState<ChatMessage[]>([]);
   const [currentQuestion, setCurrentQuestion] = useState("");
+  const [currentQuestionType, setCurrentQuestionType] = useState<FollowupResult["question_type"]>("none");
   const [replyDraft, setReplyDraft] = useState("");
   const [error, setError] = useState("");
   const [mode, setMode] = useState<"voice" | "text">("voice");
   const [textInput, setTextInput] = useState("");
+
+  // Memory + retrieval
+  const [pastMemos, setPastMemos] = useState<Memo[]>([]);
+  const [relatedMemos, setRelatedMemos] = useState<Memo[]>([]);
+  const [currentMemoId, setCurrentMemoId] = useState<string>("");
+  const [viewingMemo, setViewingMemo] = useState<Memo | null>(null);
+
+  // Load past memos on mount.
+  useEffect(() => {
+    setPastMemos(loadMemos());
+  }, []);
 
   function reset() {
     setStatus("idle");
@@ -26,14 +41,32 @@ export default function Home() {
     setExtraction(null);
     setChat([]);
     setCurrentQuestion("");
+    setCurrentQuestionType("none");
     setReplyDraft("");
     setError("");
     setTextInput("");
+    setRelatedMemos([]);
+    setCurrentMemoId("");
+    setViewingMemo(null);
+  }
+
+  function persistCurrent(finalExtraction: Extraction, finalChat: ChatMessage[]) {
+    const id = currentMemoId || newMemoId();
+    const memo: Memo = {
+      id,
+      created_iso: new Date().toISOString(),
+      transcript,
+      extraction: finalExtraction,
+      chat: finalChat,
+    };
+    saveMemo(memo);
+    setPastMemos(loadMemos());
   }
 
   async function processTranscript(text: string) {
     setTranscript(text);
     setStatus("extracting");
+    setCurrentMemoId(newMemoId());
     try {
       const r = await fetch("/api/extract", {
         method: "POST",
@@ -47,28 +80,38 @@ export default function Home() {
       if (!r.ok) throw new Error(`Extraction failed (${r.status})`);
       const data = (await r.json()) as { extraction: Extraction };
       setExtraction(data.extraction);
-      await askFollowup(text, data.extraction, []);
+      const related = findRelatedMemos(data.extraction, pastMemos);
+      setRelatedMemos(related);
+      await askFollowup(text, data.extraction, [], related);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setStatus("error");
     }
   }
 
-  async function askFollowup(t: string, ex: Extraction, c: ChatMessage[]) {
+  async function askFollowup(t: string, ex: Extraction, c: ChatMessage[], related: Memo[]) {
     setStatus("coaching");
     try {
       const r = await fetch("/api/followup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ transcript: t, extraction: ex, chat: c }),
+        body: JSON.stringify({
+          transcript: t,
+          extraction: ex,
+          chat: c,
+          related_past_memos: related,
+        }),
       });
       if (!r.ok) throw new Error(`Coach failed (${r.status})`);
       const data = (await r.json()) as { result: FollowupResult };
       if (data.result.done) {
         setCurrentQuestion("");
+        setCurrentQuestionType("none");
         setStatus("done");
+        persistCurrent(ex, c);
       } else {
         setCurrentQuestion(data.result.question);
+        setCurrentQuestionType(data.result.question_type);
         setStatus("ready_for_reply");
       }
     } catch (e) {
@@ -116,16 +159,30 @@ export default function Home() {
       if (!r.ok) throw new Error(`Re-extraction failed (${r.status})`);
       const data = (await r.json()) as { extraction: Extraction };
       setExtraction(data.extraction);
-      await askFollowup(transcript, data.extraction, newChat);
+      const related = findRelatedMemos(data.extraction, pastMemos);
+      setRelatedMemos(related);
+      await askFollowup(transcript, data.extraction, newChat, related);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setStatus("error");
     }
   }
 
-  function useSample() {
-    setMode("text");
-    setTextInput(SAMPLE);
+  function finalizeNow() {
+    if (!extraction) return;
+    setCurrentQuestion("");
+    setCurrentQuestionType("none");
+    setStatus("done");
+    persistCurrent(extraction, chat);
+  }
+
+  function openMemo(m: Memo) {
+    setViewingMemo(m);
+  }
+
+  function handleDelete(id: string) {
+    deleteMemo(id);
+    setPastMemos(loadMemos());
   }
 
   async function submitText() {
@@ -140,11 +197,72 @@ export default function Home() {
     idle: "",
     transcribing: "Transcribing audio...",
     extracting: "Pulling out structured details...",
-    coaching: "Checking for gaps...",
+    coaching: "Checking for gaps and past context...",
     ready_for_reply: "",
-    done: "Looks complete.",
+    done: "Memo saved.",
     error: "Something went wrong.",
   };
+
+  // Read-only view of a saved memo.
+  if (viewingMemo) {
+    return (
+      <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
+        <header className="border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950">
+          <div className="mx-auto max-w-3xl px-6 py-5 flex items-baseline justify-between">
+            <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+              Salescribe
+            </h1>
+            <button
+              type="button"
+              onClick={() => setViewingMemo(null)}
+              className="text-sm text-zinc-500 dark:text-zinc-400 underline"
+            >
+              ← Back
+            </button>
+          </div>
+        </header>
+        <main className="mx-auto max-w-3xl px-6 py-8 flex flex-col gap-6">
+          <div className="text-sm text-zinc-500 dark:text-zinc-400">
+            Recorded {new Date(viewingMemo.created_iso).toLocaleString()}
+          </div>
+          <section className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-4">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-2">
+              Transcript
+            </h2>
+            <p className="text-sm whitespace-pre-wrap text-zinc-900 dark:text-zinc-100">
+              {viewingMemo.transcript}
+            </p>
+          </section>
+          <ExtractionView extraction={viewingMemo.extraction} />
+          {viewingMemo.chat.length > 0 && (
+            <section className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-4">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-3">
+                Follow-up
+              </h2>
+              <div className="flex flex-col gap-3">
+                {viewingMemo.chat.map((m, i) => (
+                  <div
+                    key={i}
+                    className={`flex ${m.role === "assistant" ? "justify-start" : "justify-end"}`}
+                  >
+                    <div
+                      className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${
+                        m.role === "assistant"
+                          ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100"
+                          : "bg-blue-600 text-white"
+                      }`}
+                    >
+                      {m.content}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
@@ -161,64 +279,71 @@ export default function Home() {
 
       <main className="mx-auto max-w-3xl px-6 py-8 flex flex-col gap-6">
         {!transcript && (
-          <section className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-6 flex flex-col items-center gap-5">
-            <div className="flex gap-2 self-center text-sm">
-              <button
-                type="button"
-                onClick={() => setMode("voice")}
-                className={`px-3 py-1 rounded ${mode === "voice" ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900" : "text-zinc-600 dark:text-zinc-400"}`}
-              >
-                Record
-              </button>
-              <button
-                type="button"
-                onClick={() => setMode("text")}
-                className={`px-3 py-1 rounded ${mode === "text" ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900" : "text-zinc-600 dark:text-zinc-400"}`}
-              >
-                Paste / type
-              </button>
-            </div>
-
-            {mode === "voice" ? (
-              <>
-                <Recorder onAudio={onAudio} disabled={busy} />
+          <>
+            <section className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-6 flex flex-col items-center gap-5">
+              <div className="flex gap-2 self-center text-sm">
                 <button
                   type="button"
-                  onClick={useSample}
-                  className="text-xs text-zinc-500 dark:text-zinc-400 underline hover:text-zinc-700 dark:hover:text-zinc-200"
+                  onClick={() => setMode("voice")}
+                  className={`px-3 py-1 rounded ${mode === "voice" ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900" : "text-zinc-600 dark:text-zinc-400"}`}
                 >
-                  or try a sample memo
+                  Record
                 </button>
-              </>
-            ) : (
-              <div className="w-full flex flex-col gap-3">
-                <textarea
-                  value={textInput}
-                  onChange={(e) => setTextInput(e.target.value)}
-                  placeholder="Paste or type a memo here..."
-                  rows={8}
-                  className="w-full rounded border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-3 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400"
-                />
-                <div className="flex gap-2 justify-end">
+                <button
+                  type="button"
+                  onClick={() => setMode("text")}
+                  className={`px-3 py-1 rounded ${mode === "text" ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900" : "text-zinc-600 dark:text-zinc-400"}`}
+                >
+                  Paste / type
+                </button>
+              </div>
+
+              {mode === "voice" ? (
+                <>
+                  <Recorder onAudio={onAudio} disabled={busy} />
                   <button
                     type="button"
-                    onClick={() => setTextInput(SAMPLE)}
+                    onClick={() => {
+                      setMode("text");
+                      setTextInput(SAMPLE);
+                    }}
                     className="text-xs text-zinc-500 dark:text-zinc-400 underline hover:text-zinc-700 dark:hover:text-zinc-200"
                   >
-                    fill with sample
+                    or try a sample memo
                   </button>
-                  <button
-                    type="button"
-                    onClick={submitText}
-                    disabled={busy || !textInput.trim()}
-                    className="rounded bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 px-4 py-2 text-sm font-medium disabled:opacity-50"
-                  >
-                    Process
-                  </button>
+                </>
+              ) : (
+                <div className="w-full flex flex-col gap-3">
+                  <textarea
+                    value={textInput}
+                    onChange={(e) => setTextInput(e.target.value)}
+                    placeholder="Paste or type a memo here..."
+                    rows={8}
+                    className="w-full rounded border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-3 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400"
+                  />
+                  <div className="flex gap-2 justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setTextInput(SAMPLE)}
+                      className="text-xs text-zinc-500 dark:text-zinc-400 underline hover:text-zinc-700 dark:hover:text-zinc-200"
+                    >
+                      fill with sample
+                    </button>
+                    <button
+                      type="button"
+                      onClick={submitText}
+                      disabled={busy || !textInput.trim()}
+                      className="rounded bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 px-4 py-2 text-sm font-medium disabled:opacity-50"
+                    >
+                      Process
+                    </button>
+                  </div>
                 </div>
-              </div>
-            )}
-          </section>
+              )}
+            </section>
+
+            <MemoHistory memos={pastMemos} onOpen={openMemo} onDelete={handleDelete} />
+          </>
         )}
 
         {(busy || statusLabel[status]) && (
@@ -250,6 +375,10 @@ export default function Home() {
           </section>
         )}
 
+        {relatedMemos.length > 0 && status !== "done" && (
+          <RelatedMemos memos={relatedMemos} />
+        )}
+
         {extraction && <ExtractionView extraction={extraction} />}
 
         {(chat.length > 0 || currentQuestion) && (
@@ -277,8 +406,15 @@ export default function Home() {
               {currentQuestion && status === "ready_for_reply" && (
                 <>
                   <div className="flex justify-start">
-                    <div className="max-w-[80%] rounded-lg px-3 py-2 text-sm bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100">
-                      {currentQuestion}
+                    <div className="max-w-[80%] flex flex-col gap-1">
+                      {currentQuestionType === "history" && (
+                        <span className="text-xs text-amber-700 dark:text-amber-400 font-medium">
+                          ↻ referencing a past memo
+                        </span>
+                      )}
+                      <div className="rounded-lg px-3 py-2 text-sm bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100">
+                        {currentQuestion}
+                      </div>
                     </div>
                   </div>
                   <div className="flex gap-2">
@@ -303,20 +439,17 @@ export default function Home() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => {
-                        setCurrentQuestion("");
-                        setStatus("done");
-                      }}
+                      onClick={finalizeNow}
                       className="text-sm text-zinc-500 dark:text-zinc-400 px-3"
                     >
-                      Skip
+                      Done
                     </button>
                   </div>
                 </>
               )}
               {status === "done" && (
                 <p className="text-sm italic text-zinc-500 dark:text-zinc-400">
-                  Note looks complete. Start a new memo when you're ready.
+                  Saved to your memo history. Start a new memo when you're ready.
                 </p>
               )}
             </div>
