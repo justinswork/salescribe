@@ -211,6 +211,9 @@ export default function Home() {
           <div className="mx-auto max-w-3xl px-6 py-5 flex items-baseline justify-between">
             <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
               Salescribe
+              <span className="ml-3 align-middle text-xs font-mono font-normal text-zinc-400 dark:text-zinc-500">
+                v {process.env.NEXT_PUBLIC_GIT_SHA}
+              </span>
             </h1>
             <button
               type="button"
@@ -270,6 +273,9 @@ export default function Home() {
         <div className="mx-auto max-w-3xl px-6 py-5 flex items-baseline justify-between">
           <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
             Salescribe
+            <span className="ml-3 align-middle text-xs font-mono font-normal text-zinc-400 dark:text-zinc-500">
+              v {process.env.NEXT_PUBLIC_GIT_SHA}
+            </span>
           </h1>
           <p className="text-sm text-zinc-500 dark:text-zinc-400">
             Voice memos → structured sales notes
