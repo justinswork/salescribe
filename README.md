@@ -43,12 +43,20 @@ Both live in [`src/lib/prompts.ts`](src/lib/prompts.ts).
 | **System prompts** | Distinct extractor (clinical, schema-bound) and coach (warm, agentic) system prompts — different voice, scope, rules. |
 | **Grounding** | Completeness checklist injected into the coach. `reference_now_iso` injected into the extractor for honest relative-date math. |
 | **Retrieval-augmented generation (RAG)** | After each extraction, [`src/lib/storage.ts`](src/lib/storage.ts) retrieves past memos that share a company hint with the current memo and passes them as context to the coach. The retrieval is intentionally simple (substring match on company name) rather than vector-based — debuggable, no embedding store needed. |
-| **LLM memory** | Memos persist in `localStorage` across sessions. A "Recent memos" sidebar lets you revisit any prior memo and the coach has access to them as retrieved context. |
+| **LLM memory** | Per-user memo persistence in **Firestore** at `users/{uid}/memos/{memoId}`, scoped by signed-in identity. Security rules ([`firestore.rules`](firestore.rules)) enforce that each user can only read/write their own subtree. A "Recent memos" sidebar lets a user revisit any prior memo, and the coach has access to them as retrieved context. |
 | **Agents** | The coach is an agent in the lightweight sense: each turn it observes (transcript + extraction + chat + retrieved memos), chooses an action type (`gap` / `history` / `none`), and acts. The chosen action type surfaces in the UI as a subtle "↻ referencing a past memo" label when applicable. |
 | **Multi-model use** | OpenAI Whisper (transcription) + Anthropic Claude Sonnet 4.6 (extraction & coaching). Two vendors, distinct strengths. |
 | **Tool / MCP use** | Anthropic `tool_use` with forced `tool_choice` for both extraction (`submit_extraction`) and coaching (`submit_followup`). Treats the JSON schema as a contract instead of hoping freeform JSON parses. |
 | **Evaluation** | 5-case eval harness in [`evals/`](evals/) with per-check assertions that probe specific behaviors (date math, anti-fabrication, self-correction, no-deal-no-deal-fields). |
 | **Disciplinary application** | B2B sales workflow — the completeness checklist is sales-specific (WHO/WHAT/BUDGET/DECISION/COMPETITION/etc.), so the project lives in a real discipline rather than being a generic chatbot. |
+
+## Auth & data model
+
+- **Sign-in:** Required, Google-only via Firebase Authentication. No anonymous use.
+- **Per-user memo storage:** Firestore subcollection at `users/{uid}/memos/{memoId}`. Each memo document mirrors the `Memo` TypeScript type — `{ id, created_iso, transcript, extraction, chat }`.
+- **Security:** Firestore rules ([`firestore.rules`](firestore.rules)) enforce `request.auth.uid == uid` on every read/write. Default-deny on everything else.
+- **Client-side reads/writes:** The Firebase client SDK talks to Firestore directly from the browser using the signed-in user's session. The Next.js API routes never touch user data — they only proxy to Anthropic/OpenAI. This keeps the route handlers stateless and makes auth a pure client concern.
+- **Public Firebase config:** `apiKey` / `authDomain` / `projectId` etc. are in [`src/lib/firebase.ts`](src/lib/firebase.ts). Despite the misleading "apiKey" name, none of these are secrets — security comes from Auth + rules, not from keeping the config private.
 
 ## Deploying
 
@@ -57,13 +65,17 @@ Hosted on **Firebase App Hosting**. One-time setup:
 ```bash
 npm install -g firebase-tools
 firebase login
-firebase init apphosting          # connect a Firebase project; pick a backend region
 firebase apphosting:secrets:set ANTHROPIC_API_KEY    # paste the key when prompted
 firebase apphosting:secrets:set OPENAI_API_KEY
-firebase deploy --only apphosting
+firebase apphosting:secrets:grantaccess ANTHROPIC_API_KEY --backend salescribe
+firebase apphosting:secrets:grantaccess OPENAI_API_KEY --backend salescribe
+firebase deploy --only firestore:rules
+firebase apphosting:rollouts:create salescribe --git-branch main
 ```
 
-Config lives in [apphosting.yaml](apphosting.yaml). Subsequent deploys = `firebase deploy --only apphosting` (or auto-deploy by pushing to the branch you connected in the console).
+In the Firebase console you also need to: register a web app, enable the Google sign-in provider, enable Firestore, and add the App Hosting URL to Authorized domains under Authentication settings.
+
+Config lives in [apphosting.yaml](apphosting.yaml) (App Hosting) and [firebase.json](firebase.json) (Firestore rules wiring). Subsequent app deploys auto-trigger on push to `main`; Firestore rules redeploy with `firebase deploy --only firestore:rules`.
 
 ## Running locally
 
@@ -183,6 +195,8 @@ Honesty note up front: when I finally ran the eval suite against live APIs, **v1
 - **Next.js 16** (App Router, Route Handlers)
 - **OpenAI Whisper** (`whisper-1`) for transcription
 - **Anthropic Claude Sonnet 4.6** (`claude-sonnet-4-6`) for extraction and follow-up
+- **Firebase Authentication** (Google provider) for sign-in
+- **Cloud Firestore** for per-user memo persistence
 - **Tailwind v4** for UI
 - **Firebase App Hosting** for deployment (Cloud Run under the hood)
 
@@ -195,18 +209,25 @@ src/
 │   │   ├── transcribe/route.ts   # Whisper
 │   │   ├── extract/route.ts      # Claude extractor + tool_use
 │   │   └── followup/route.ts     # Claude coach + tool_use + RAG injection
-│   ├── layout.tsx
-│   └── page.tsx                  # main UI + state machine + memory persistence
+│   ├── layout.tsx                # wraps tree in AuthProvider
+│   └── page.tsx                  # AuthGuard → SalescribeApp (state machine)
 ├── components/
 │   ├── Recorder.tsx              # MediaRecorder client component
 │   ├── ExtractionView.tsx        # renders the structured fields
 │   ├── MemoHistory.tsx           # past-memos sidebar
-│   └── RelatedMemos.tsx          # in-memo retrieval callout
+│   ├── RelatedMemos.tsx          # in-memo retrieval callout
+│   ├── AuthGuard.tsx             # gates the app on signed-in state
+│   ├── SignInScreen.tsx          # Google-only sign-in landing
+│   └── AccountMenu.tsx           # header avatar + sign-out
 └── lib/
-    ├── clients.ts                # SDK clients + model IDs
+    ├── clients.ts                # Anthropic/OpenAI SDK lazy singletons + model IDs
     ├── prompts.ts                # both system prompts + completeness checklist
     ├── schema.ts                 # JSON Schemas + mirrored TS types
-    └── storage.ts                # localStorage memo persistence + retrieval
+    ├── storage.ts                # Firestore memo persistence + in-memory retrieval
+    ├── firebase.ts               # Firebase client SDK init (public config)
+    └── AuthContext.tsx           # React context exposing user/signIn/signOut
+firestore.rules                   # per-user read/write isolation
+apphosting.yaml                   # App Hosting backend config (secrets, runtime)
 evals/
 ├── cases.mjs                     # eval set
 └── run.mjs                       # eval runner
