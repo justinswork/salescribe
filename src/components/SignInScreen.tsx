@@ -37,8 +37,11 @@ export default function SignInScreen() {
       <div className="max-w-sm w-full mx-6 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-8 text-center">
         <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 mb-1">
           Salescribe
-          <span className="ml-2 align-middle text-xs font-mono font-normal text-zinc-400 dark:text-zinc-500">
-            v {process.env.NEXT_PUBLIC_GIT_SHA}
+          <span
+            className="ml-2 align-middle text-xs font-mono font-normal text-zinc-400 dark:text-zinc-500"
+            title={`commit ${process.env.NEXT_PUBLIC_GIT_SHA}`}
+          >
+            v{process.env.NEXT_PUBLIC_APP_VERSION}
           </span>
         </h1>
         <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-6">
