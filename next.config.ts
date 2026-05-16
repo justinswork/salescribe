@@ -3,39 +3,23 @@ import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-// Version = MAJOR.MINOR (from package.json) . PATCH (auto-incrementing from git
-// commit count). The baseline is the commit count at which we declared the
-// versioning scheme — every commit after that increments the patch by 1.
-// Set baseline to 12 so commit 13 displays as 0.1.1.
-const VERSION_BASELINE_COMMITS = 12;
-
-function readPackageVersion(): string {
-  try {
-    const raw = readFileSync(join(__dirname, "package.json"), "utf8");
-    const v = (JSON.parse(raw) as { version?: string }).version ?? "0.1.0";
-    const [major, minor] = v.split(".");
-    return `${major}.${minor}`;
-  } catch {
-    return "0.1";
-  }
-}
-
+// Version is the literal `version` field in package.json. Bump it with
+// `npm version patch --no-git-tag-version` (or just edit by hand) to release a
+// new build. We tried auto-incrementing from git commit count, but Firebase
+// App Hosting clones the repo with shallow history, so the count is always 1
+// in the build sandbox. Plain package.json is reliable on any clone depth.
 function getVersion(): string {
   if (process.env.NEXT_PUBLIC_APP_VERSION) return process.env.NEXT_PUBLIC_APP_VERSION;
-  const majorMinor = readPackageVersion();
   try {
-    const count = Number(
-      execSync("git rev-list --count HEAD", { stdio: ["ignore", "pipe", "ignore"] })
-        .toString()
-        .trim(),
-    );
-    const patch = Math.max(0, count - VERSION_BASELINE_COMMITS);
-    return `${majorMinor}.${patch}`;
+    const raw = readFileSync(join(__dirname, "package.json"), "utf8");
+    return (JSON.parse(raw) as { version?: string }).version ?? "0.0.0";
   } catch {
-    return `${majorMinor}.0-dev`;
+    return "0.0.0";
   }
 }
 
+// Git SHA stays around for the hover tooltip on the version chip — useful for
+// tracing a deployed instance back to a specific commit.
 function getGitSha(): string {
   if (process.env.NEXT_PUBLIC_GIT_SHA) return process.env.NEXT_PUBLIC_GIT_SHA;
   try {
