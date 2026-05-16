@@ -8,7 +8,9 @@ A traveling B2B salesperson dictates a memo between meetings. Salescribe transcr
 
 ## Live demo
 
-Deployed at: **(URL will be added after Firebase App Hosting deploy)**
+**Deployed at: <https://salescribe--salescribe-2532a.us-east4.hosted.app>**
+
+Verified end-to-end against production: 43/43 eval checks pass (`SALESCRIBE_URL=https://salescribe--salescribe-2532a.us-east4.hosted.app npm run eval`).
 
 ## How it works
 
