@@ -426,6 +426,45 @@ function SalescribeApp() {
 
         {extraction && <ExtractionView extraction={extraction} />}
 
+        {extraction && !busy && (
+          <section
+            className={`rounded-lg border p-4 flex items-center justify-between gap-3 ${
+              status === "done"
+                ? "border-green-300 bg-green-50 dark:bg-green-950/30 dark:border-green-900"
+                : "border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950"
+            }`}
+          >
+            {status === "done" ? (
+              <>
+                <div className="text-sm text-green-800 dark:text-green-200 flex items-center gap-2">
+                  <span aria-hidden="true">✓</span>
+                  <span>Saved to your memo history.</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={reset}
+                  className="rounded bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 px-4 py-2 text-sm font-medium"
+                >
+                  Start new memo
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="text-sm text-zinc-700 dark:text-zinc-300">
+                  Not saved yet — answer the coach below or finish now.
+                </div>
+                <button
+                  type="button"
+                  onClick={finalizeNow}
+                  className="rounded bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 px-4 py-2 text-sm font-medium"
+                >
+                  Save and finish
+                </button>
+              </>
+            )}
+          </section>
+        )}
+
         {(chat.length > 0 || currentQuestion) && (
           <section className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-4">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-3">
@@ -492,22 +531,19 @@ function SalescribeApp() {
                   </div>
                 </>
               )}
-              {status === "done" && (
-                <p className="text-sm italic text-zinc-500 dark:text-zinc-400">
-                  Saved to your memo history. Start a new memo when you're ready.
-                </p>
-              )}
             </div>
           </section>
         )}
 
-        {transcript && (
+        {transcript && status !== "done" && (
           <button
             type="button"
-            onClick={reset}
+            onClick={() => {
+              if (!extraction || confirm("Discard this memo without saving?")) reset();
+            }}
             className="self-start text-sm text-zinc-500 dark:text-zinc-400 underline hover:text-zinc-700 dark:hover:text-zinc-200"
           >
-            ← New memo
+            ← Discard and start over
           </button>
         )}
       </main>
