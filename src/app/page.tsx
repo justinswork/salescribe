@@ -7,6 +7,7 @@ import MemoHistory from "@/components/MemoHistory";
 import RelatedMemos from "@/components/RelatedMemos";
 import AuthGuard from "@/components/AuthGuard";
 import AccountMenu from "@/components/AccountMenu";
+import ThemeToggle from "@/components/ThemeToggle";
 import { useAuth } from "@/lib/AuthContext";
 import type { ChatMessage, Extraction, FollowupResult, Memo } from "@/lib/schema";
 import { loadMemos, saveMemo, deleteMemo, newMemoId, findRelatedMemos } from "@/lib/storage";
@@ -242,20 +243,21 @@ function SalescribeApp() {
       <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
         <header className="border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950">
           <div className="mx-auto max-w-3xl px-6 py-5 flex items-center justify-between">
-            <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-              Salescribe
+            <button
+              type="button"
+              onClick={() => setViewingMemo(null)}
+              className="inline-flex items-baseline rounded text-left hover:opacity-80"
+              aria-label="Go to home"
+            >
+              <span className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+                Salescribe
+              </span>
               <span className="ml-3 align-middle text-xs font-mono font-normal text-zinc-400 dark:text-zinc-500">
                 v {process.env.NEXT_PUBLIC_GIT_SHA}
               </span>
-            </h1>
-            <div className="flex items-center gap-4">
-              <button
-                type="button"
-                onClick={() => setViewingMemo(null)}
-                className="text-sm text-zinc-500 dark:text-zinc-400 underline"
-              >
-                ← Back
-              </button>
+            </button>
+            <div className="flex items-center gap-2">
+              <ThemeToggle />
               <AccountMenu />
             </div>
           </div>
@@ -307,16 +309,28 @@ function SalescribeApp() {
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
       <header className="border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950">
         <div className="mx-auto max-w-3xl px-6 py-5 flex items-center justify-between">
-          <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-            Salescribe
+          <button
+            type="button"
+            onClick={() => {
+              if (!transcript || status === "done" || !extraction || confirm("Discard this memo without saving?")) {
+                reset();
+              }
+            }}
+            className="inline-flex items-baseline rounded text-left hover:opacity-80"
+            aria-label="Go to home"
+          >
+            <span className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+              Salescribe
+            </span>
             <span className="ml-3 align-middle text-xs font-mono font-normal text-zinc-400 dark:text-zinc-500">
               v {process.env.NEXT_PUBLIC_GIT_SHA}
             </span>
-          </h1>
-          <div className="flex items-center gap-4">
-            <p className="hidden sm:block text-sm text-zinc-500 dark:text-zinc-400">
+          </button>
+          <div className="flex items-center gap-2">
+            <p className="hidden md:block text-sm text-zinc-500 dark:text-zinc-400 mr-2">
               Voice memos → structured sales notes
             </p>
+            <ThemeToggle />
             <AccountMenu />
           </div>
         </div>
