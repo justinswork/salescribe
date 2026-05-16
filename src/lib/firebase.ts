@@ -1,24 +1,48 @@
 "use client";
 
-import { initializeApp, getApps, getApp } from "firebase/app";
-import { getAuth, GoogleAuthProvider } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+import { initializeApp, getApps, type FirebaseApp } from "firebase/app";
+import { getAuth as fbGetAuth, GoogleAuthProvider, type Auth } from "firebase/auth";
+import { getFirestore, type Firestore } from "firebase/firestore";
 
-// Public Firebase config. Misleadingly named — none of these are secrets.
-// Security comes from Firebase Auth + Firestore security rules, not from
-// keeping these values private. They identify the project for the client SDK.
-const firebaseConfig = {
-  apiKey: "AIzaSyA2GTt7OryaHOYx_-IOShaFQDfq-zOdeT4",
-  authDomain: "salescribe-2532a.firebaseapp.com",
-  projectId: "salescribe-2532a",
-  storageBucket: "salescribe-2532a.firebasestorage.app",
-  messagingSenderId: "632214597362",
-  appId: "1:632214597362:web:7c85e45c95ff3c20bf2a6b",
-};
+// Firebase Web SDK config. NEXT_PUBLIC_* values get baked into the client
+// bundle at build time. They're public by design — security comes from
+// Firebase Auth + Firestore rules. Sourced from .env.local in dev and from
+// apphosting.yaml in production.
+function getConfig() {
+  return {
+    apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+    authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+    projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+    storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+    messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+    appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+  };
+}
 
-// getApps()/getApp() guards against double-init under Next.js HMR.
-const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+// Lazy singletons. Initializing Firebase eagerly at module load means
+// `next build` blows up during static page evaluation when env vars
+// aren't injected (same pattern as our Anthropic/OpenAI clients).
+// Deferring to first use keeps the build environment safe while making
+// the runtime cost a single one-time init.
+let _app: FirebaseApp | undefined;
+let _auth: Auth | undefined;
+let _db: Firestore | undefined;
 
-export const auth = getAuth(app);
-export const db = getFirestore(app);
+function getApp(): FirebaseApp {
+  if (_app) return _app;
+  _app = getApps().length === 0 ? initializeApp(getConfig()) : getApps()[0];
+  return _app;
+}
+
+export function getAuthInstance(): Auth {
+  if (!_auth) _auth = fbGetAuth(getApp());
+  return _auth;
+}
+
+export function getDbInstance(): Firestore {
+  if (!_db) _db = getFirestore(getApp());
+  return _db;
+}
+
+// Provider construction doesn't touch config — safe to export as a const.
 export const googleProvider = new GoogleAuthProvider();

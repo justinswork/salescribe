@@ -15,6 +15,7 @@ runConfig:
   # Cloud Run default request timeout (5 min) is plenty for our Whisper + Claude calls.
 
 env:
+  # Secrets — runtime-only, never logged, never bundled into the client.
   - variable: ANTHROPIC_API_KEY
     secret: ANTHROPIC_API_KEY
     availability:
@@ -22,4 +23,39 @@ env:
   - variable: OPENAI_API_KEY
     secret: OPENAI_API_KEY
     availability:
+      - RUNTIME
+
+  # Firebase Web SDK config. Public values by design (they ship to every
+  # visitor's browser as part of the client bundle). NEXT_PUBLIC_* prefix
+  # means Next.js inlines them into the client bundle at build time, so
+  # availability must include BUILD.
+  - variable: NEXT_PUBLIC_FIREBASE_API_KEY
+    value: AIzaSyA2GTt7OryaHOYx_-IOShaFQDfq-zOdeT4
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+    value: salescribe-2532a.firebaseapp.com
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_PROJECT_ID
+    value: salescribe-2532a
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+    value: salescribe-2532a.firebasestorage.app
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+    value: "632214597362"
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_APP_ID
+    value: 1:632214597362:web:7c85e45c95ff3c20bf2a6b
+    availability:
+      - BUILD
       - RUNTIME

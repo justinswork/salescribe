@@ -56,7 +56,7 @@ Both live in [`src/lib/prompts.ts`](src/lib/prompts.ts).
 - **Per-user memo storage:** Firestore subcollection at `users/{uid}/memos/{memoId}`. Each memo document mirrors the `Memo` TypeScript type — `{ id, created_iso, transcript, extraction, chat }`.
 - **Security:** Firestore rules ([`firestore.rules`](firestore.rules)) enforce `request.auth.uid == uid` on every read/write. Default-deny on everything else.
 - **Client-side reads/writes:** The Firebase client SDK talks to Firestore directly from the browser using the signed-in user's session. The Next.js API routes never touch user data — they only proxy to Anthropic/OpenAI. This keeps the route handlers stateless and makes auth a pure client concern.
-- **Public Firebase config:** `apiKey` / `authDomain` / `projectId` etc. are in [`src/lib/firebase.ts`](src/lib/firebase.ts). Despite the misleading "apiKey" name, none of these are secrets — security comes from Auth + rules, not from keeping the config private.
+- **Public Firebase config:** `apiKey` / `authDomain` / `projectId` etc. are stored as `NEXT_PUBLIC_FIREBASE_*` env vars — values committed in [apphosting.yaml](apphosting.yaml) for production and in your local `.env.local` for dev (template in [.env.local.example](.env.local.example)). Despite the misleading "apiKey" name, none of these are secrets — security comes from Auth + rules, not from keeping the config private. Storing them in env vars instead of source-code literals is a code-hygiene choice, not a security measure.
 
 ## Deploying
 

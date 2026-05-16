@@ -7,7 +7,7 @@ import {
   signOut as fbSignOut,
   User,
 } from "firebase/auth";
-import { auth, googleProvider } from "./firebase";
+import { getAuthInstance, googleProvider } from "./firebase";
 
 type AuthState = {
   user: User | null;
@@ -31,7 +31,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [authError, setAuthError] = useState<string | null>(null);
 
   useEffect(() => {
-    return onAuthStateChanged(auth, (u) => {
+    return onAuthStateChanged(getAuthInstance(), (u) => {
       setUser(u);
       setLoading(false);
     });
@@ -40,7 +40,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function signIn() {
     setAuthError(null);
     try {
-      await signInWithPopup(auth, googleProvider);
+      await signInWithPopup(getAuthInstance(), googleProvider);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       // popup-closed-by-user is benign; don't show as an error.
@@ -51,7 +51,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function signOut() {
-    await fbSignOut(auth);
+    await fbSignOut(getAuthInstance());
   }
 
   return (

@@ -19,19 +19,19 @@ import {
   query,
   setDoc,
 } from "firebase/firestore";
-import { auth, db } from "./firebase";
+import { getAuthInstance, getDbInstance } from "./firebase";
 import type { Extraction, Memo } from "./schema";
 
 const MAX_RELATED = 3;
 
 function memosCollection() {
-  const uid = auth.currentUser?.uid;
+  const uid = getAuthInstance().currentUser?.uid;
   if (!uid) throw new Error("Not signed in");
-  return collection(db, "users", uid, "memos");
+  return collection(getDbInstance(), "users", uid, "memos");
 }
 
 export async function loadMemos(): Promise<Memo[]> {
-  const uid = auth.currentUser?.uid;
+  const uid = getAuthInstance().currentUser?.uid;
   if (!uid) return [];
   const q = query(memosCollection(), orderBy("created_iso", "desc"));
   const snap = await getDocs(q);
