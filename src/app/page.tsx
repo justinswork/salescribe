@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Recorder from "@/components/Recorder";
 import ExtractionView from "@/components/ExtractionView";
 import MemoHistory from "@/components/MemoHistory";
@@ -8,7 +8,10 @@ import RelatedMemos from "@/components/RelatedMemos";
 import AuthGuard from "@/components/AuthGuard";
 import AccountMenu from "@/components/AccountMenu";
 import ThemeToggle from "@/components/ThemeToggle";
+import HandsFreeToggle from "@/components/HandsFreeToggle";
 import { useAuth } from "@/lib/AuthContext";
+import { useHandsFree } from "@/lib/HandsFreeContext";
+import { cancelSpeech, listenForReply, speak, type ListenHandle } from "@/lib/speech";
 import type { ChatMessage, Extraction, FollowupResult, Memo } from "@/lib/schema";
 import { loadMemos, saveMemo, deleteMemo, newMemoId, findRelatedMemos } from "@/lib/storage";
 
@@ -26,6 +29,7 @@ export default function Home() {
 
 function SalescribeApp() {
   const { user } = useAuth();
+  const handsFree = useHandsFree();
 
   const [status, setStatus] = useState<Status>("idle");
   const [transcript, setTranscript] = useState("");
@@ -45,6 +49,15 @@ function SalescribeApp() {
   const [viewingMemo, setViewingMemo] = useState<Memo | null>(null);
   const [sampleLoading, setSampleLoading] = useState(false);
 
+  // Hands-free state. `speaking` is true while TTS is reading the coach's
+  // question; `listening` is true while STT is collecting the salesperson's
+  // spoken reply. `partialReply` mirrors the live transcript so the UI can
+  // show what the recognizer is hearing in real time.
+  const [speaking, setSpeaking] = useState(false);
+  const [listening, setListening] = useState(false);
+  const [partialReply, setPartialReply] = useState("");
+  const listenHandleRef = useRef<ListenHandle | null>(null);
+
   // Load past memos whenever the signed-in user changes.
   useEffect(() => {
     if (!user) return;
@@ -62,6 +75,12 @@ function SalescribeApp() {
   }, [user]);
 
   function reset() {
+    cancelSpeech();
+    listenHandleRef.current?.stop();
+    listenHandleRef.current = null;
+    setSpeaking(false);
+    setListening(false);
+    setPartialReply("");
     setStatus("idle");
     setTranscript("");
     setExtraction(null);
@@ -75,6 +94,77 @@ function SalescribeApp() {
     setCurrentMemoId("");
     setViewingMemo(null);
   }
+
+  // On unmount, kill any in-flight speech or listening so the user doesn't get
+  // a stuck "speaking..." after navigating away.
+  useEffect(() => {
+    return () => {
+      cancelSpeech();
+      listenHandleRef.current?.stop();
+    };
+  }, []);
+
+  // Hands-free flow: when a follow-up question is on screen and hands-free is
+  // enabled, speak the question, then listen for either a spoken reply or an
+  // "end notes" voice command.
+  useEffect(() => {
+    if (!handsFree.enabled) return;
+    if (status !== "ready_for_reply" || !currentQuestion) return;
+
+    let aborted = false;
+
+    (async () => {
+      setSpeaking(true);
+      await speak(currentQuestion);
+      if (aborted) return;
+      setSpeaking(false);
+
+      setPartialReply("");
+      setListening(true);
+      listenHandleRef.current = listenForReply({
+        onPartialTranscript: (t) => setPartialReply(t),
+        onReply: (text) => {
+          setListening(false);
+          setPartialReply("");
+          listenHandleRef.current = null;
+          // Pass spoken text directly — bypasses the replyDraft input.
+          void submitReply(text);
+        },
+        onEndNotesCommand: () => {
+          setListening(false);
+          setPartialReply("");
+          listenHandleRef.current = null;
+          void finalizeNow();
+        },
+        onError: (e) => {
+          setListening(false);
+          setPartialReply("");
+          listenHandleRef.current = null;
+          setError(`Listening failed: ${e.message}. Switch to typing or disable hands-free.`);
+        },
+      });
+    })();
+
+    return () => {
+      aborted = true;
+      cancelSpeech();
+      listenHandleRef.current?.stop();
+      listenHandleRef.current = null;
+      setSpeaking(false);
+      setListening(false);
+      setPartialReply("");
+    };
+    // submitReply / finalizeNow are stable closures captured from this render;
+    // we intentionally don't depend on them or eslint would chase its own tail.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status, currentQuestion, handsFree.enabled]);
+
+  // Speak "Saved." once when a memo finishes in hands-free mode.
+  useEffect(() => {
+    if (!handsFree.enabled) return;
+    if (status !== "done") return;
+    void speak("Saved.");
+  }, [status, handsFree.enabled]);
 
   async function persistCurrent(finalExtraction: Extraction, finalChat: ChatMessage[]) {
     const id = currentMemoId || newMemoId();
@@ -170,12 +260,13 @@ function SalescribeApp() {
     }
   }
 
-  async function submitReply() {
-    if (!replyDraft.trim() || !extraction) return;
+  async function submitReply(textOverride?: string) {
+    const replyText = (textOverride ?? replyDraft).trim();
+    if (!replyText || !extraction) return;
     const newChat: ChatMessage[] = [
       ...chat,
       { role: "assistant", content: currentQuestion },
-      { role: "user", content: replyDraft.trim() },
+      { role: "user", content: replyText },
     ];
     setChat(newChat);
     setReplyDraft("");
@@ -366,6 +457,7 @@ function SalescribeApp() {
             </span>
           </button>
           <div className="flex items-center gap-2">
+            <HandsFreeToggle />
             <ThemeToggle />
             <AccountMenu />
           </div>
@@ -546,27 +638,51 @@ function SalescribeApp() {
                           ↻ referencing a past memo
                         </span>
                       )}
+                      {speaking && (
+                        <span className="text-xs text-blue-700 dark:text-blue-400 font-medium inline-flex items-center gap-1">
+                          <span className="inline-block h-2 w-2 rounded-full bg-blue-600 animate-pulse" />
+                          reading question aloud…
+                        </span>
+                      )}
                       <div className="rounded-lg px-3 py-2 text-sm bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100">
                         {currentQuestion}
                       </div>
                     </div>
                   </div>
+                  {listening && (
+                    <div className="rounded-lg border border-blue-300 dark:border-blue-900/60 bg-blue-50 dark:bg-blue-950/20 p-3 flex flex-col gap-1">
+                      <div className="text-xs font-medium text-blue-700 dark:text-blue-400 inline-flex items-center gap-1.5">
+                        <span className="inline-block h-2 w-2 rounded-full bg-blue-600 animate-pulse" />
+                        listening… say <span className="font-mono">&ldquo;end notes&rdquo;</span> to save and close
+                      </div>
+                      {partialReply && (
+                        <div className="text-sm text-zinc-700 dark:text-zinc-300 italic">
+                          {partialReply}
+                        </div>
+                      )}
+                    </div>
+                  )}
                   <div className="flex gap-2">
                     <input
                       type="text"
                       value={replyDraft}
                       onChange={(e) => setReplyDraft(e.target.value)}
                       onKeyDown={(e) => {
-                        if (e.key === "Enter") submitReply();
+                        if (e.key === "Enter") void submitReply();
                       }}
-                      placeholder="Your answer..."
-                      className="flex-1 rounded border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100"
-                      autoFocus
+                      placeholder={
+                        handsFree.enabled
+                          ? "or type a reply manually…"
+                          : "Your answer..."
+                      }
+                      disabled={speaking || listening}
+                      className="flex-1 rounded border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 disabled:opacity-60"
+                      autoFocus={!handsFree.enabled}
                     />
                     <button
                       type="button"
-                      onClick={submitReply}
-                      disabled={!replyDraft.trim() || busy}
+                      onClick={() => void submitReply()}
+                      disabled={!replyDraft.trim() || busy || speaking || listening}
                       className="rounded bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 px-4 py-2 text-sm font-medium disabled:opacity-50"
                     >
                       Send

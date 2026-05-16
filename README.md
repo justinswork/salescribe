@@ -35,6 +35,20 @@ Two separate system prompts power the app:
 
 Both live in [`src/lib/prompts.ts`](src/lib/prompts.ts).
 
+## Hands-free mode
+
+A salesperson dictating between meetings shouldn't have to look at a screen. With the headphones icon in the header toggled on:
+
+1. Tap **record** → speak the memo → tap **stop**. (The record/stop button is the only manual interaction in this mode.)
+2. The app transcribes (Whisper), extracts the structured fields, generates a follow-up question, and **reads the question out loud**.
+3. After the question finishes, the app **starts listening** for your spoken reply. A subtle blue indicator and a live partial transcript show what it's hearing.
+4. Speak your answer. After ~3 seconds of silence the app treats it as complete, re-extracts, and reads the next question.
+5. Say any of `"end notes"`, `"save and close"`, `"save the memo"`, `"that's all"`, `"we're done"`, or `"done recording"` to immediately finalize the memo. The app speaks **"Saved."** and shows the saved state.
+
+**Implementation:** browser-native [`speechSynthesis`](https://developer.mozilla.org/en-US/docs/Web/API/SpeechSynthesis) for TTS and [`SpeechRecognition`](https://developer.mozilla.org/en-US/docs/Web/API/SpeechRecognition) for STT — see [`src/lib/speech.ts`](src/lib/speech.ts). No extra API keys, no extra cost, no network round-trip on each utterance. The Web Speech APIs are supported in Chrome, Edge, and Safari (including iOS Safari 14.5+); the toggle is automatically disabled in Firefox, which doesn't support `SpeechRecognition`.
+
+The toggle state persists in `localStorage`. A manual input row stays visible underneath the listening indicator so you can still type a reply if the recognizer mis-hears.
+
 ## Syllabus coverage
 
 | Course objective | Where it shows up |
@@ -45,7 +59,7 @@ Both live in [`src/lib/prompts.ts`](src/lib/prompts.ts).
 | **Retrieval-augmented generation (RAG)** | After each extraction, [`src/lib/storage.ts`](src/lib/storage.ts) retrieves past memos that share a company hint with the current memo and passes them as context to the coach. The retrieval is intentionally simple (substring match on company name) rather than vector-based — debuggable, no embedding store needed. |
 | **LLM memory** | Per-user memo persistence in **Firestore** at `users/{uid}/memos/{memoId}`, scoped by signed-in identity. Security rules ([`firestore.rules`](firestore.rules)) enforce that each user can only read/write their own subtree. A "Recent memos" sidebar lets a user revisit any prior memo, and the coach has access to them as retrieved context. |
 | **Agents** | The coach is an agent in the lightweight sense: each turn it observes (transcript + extraction + chat + retrieved memos), chooses an action type (`gap` / `history` / `none`), and acts. The chosen action type surfaces in the UI as a subtle "↻ referencing a past memo" label when applicable. |
-| **Multi-model use** | OpenAI Whisper (transcription) + Anthropic Claude Sonnet 4.6 (extraction & coaching). Two vendors, distinct strengths. |
+| **Multi-model use** | OpenAI Whisper (transcription) + Anthropic Claude Sonnet 4.6 (extraction, coaching, sample-memo generation). Two vendors, distinct strengths. Browser-native speech APIs also layered on top for the hands-free experience. |
 | **Tool / MCP use** | Anthropic `tool_use` with forced `tool_choice` for both extraction (`submit_extraction`) and coaching (`submit_followup`). Treats the JSON schema as a contract instead of hoping freeform JSON parses. |
 | **Evaluation** | 5-case eval harness in [`evals/`](evals/) with per-check assertions that probe specific behaviors (date math, anti-fabrication, self-correction, no-deal-no-deal-fields). |
 | **Disciplinary application** | B2B sales workflow — the completeness checklist is sales-specific (WHO/WHAT/BUDGET/DECISION/COMPETITION/etc.), so the project lives in a real discipline rather than being a generic chatbot. |
@@ -194,7 +208,8 @@ Honesty note up front: when I finally ran the eval suite against live APIs, **v1
 
 - **Next.js 16** (App Router, Route Handlers)
 - **OpenAI Whisper** (`whisper-1`) for transcription
-- **Anthropic Claude Sonnet 4.6** (`claude-sonnet-4-6`) for extraction and follow-up
+- **Anthropic Claude Sonnet 4.6** (`claude-sonnet-4-6`) for extraction, follow-up coaching, and sample-memo generation
+- **Web Speech APIs** (`speechSynthesis` + `SpeechRecognition`) for hands-free question narration and spoken replies
 - **Firebase Authentication** (Google provider) for sign-in
 - **Cloud Firestore** for per-user memo persistence
 - **Tailwind v4** for UI
@@ -208,7 +223,8 @@ src/
 │   ├── api/
 │   │   ├── transcribe/route.ts   # Whisper
 │   │   ├── extract/route.ts      # Claude extractor + tool_use
-│   │   └── followup/route.ts     # Claude coach + tool_use + RAG injection
+│   │   ├── followup/route.ts     # Claude coach + tool_use + RAG injection
+│   │   └── sample/route.ts       # Claude generator for fresh sample memos
 │   ├── layout.tsx                # wraps tree in AuthProvider
 │   └── page.tsx                  # AuthGuard → SalescribeApp (state machine)
 ├── components/
@@ -218,14 +234,19 @@ src/
 │   ├── RelatedMemos.tsx          # in-memo retrieval callout
 │   ├── AuthGuard.tsx             # gates the app on signed-in state
 │   ├── SignInScreen.tsx          # Google-only sign-in landing
-│   └── AccountMenu.tsx           # header avatar + sign-out
+│   ├── AccountMenu.tsx           # header avatar + sign-out
+│   ├── ThemeToggle.tsx           # system/light/dark cycle button
+│   └── HandsFreeToggle.tsx       # hands-free mode toggle
 └── lib/
     ├── clients.ts                # Anthropic/OpenAI SDK lazy singletons + model IDs
-    ├── prompts.ts                # both system prompts + completeness checklist
+    ├── prompts.ts                # all system prompts (extractor, coach, sample generator)
     ├── schema.ts                 # JSON Schemas + mirrored TS types
     ├── storage.ts                # Firestore memo persistence + in-memory retrieval
     ├── firebase.ts               # Firebase client SDK init (public config)
-    └── AuthContext.tsx           # React context exposing user/signIn/signOut
+    ├── speech.ts                 # TTS + STT wrappers + end-notes command detection
+    ├── AuthContext.tsx           # React context exposing user/signIn/signOut
+    ├── ThemeContext.tsx          # theme preference (system/light/dark)
+    └── HandsFreeContext.tsx      # hands-free toggle + browser support detection
 firestore.rules                   # per-user read/write isolation
 apphosting.yaml                   # App Hosting backend config (secrets, runtime)
 evals/

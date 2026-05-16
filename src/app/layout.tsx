@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { AuthProvider } from "@/lib/AuthContext";
 import { ThemeProvider } from "@/lib/ThemeContext";
+import { HandsFreeProvider } from "@/lib/HandsFreeContext";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -47,7 +48,9 @@ export default function RootLayout({
       </head>
       <body className="min-h-full flex flex-col font-sans">
         <ThemeProvider>
-          <AuthProvider>{children}</AuthProvider>
+          <HandsFreeProvider>
+            <AuthProvider>{children}</AuthProvider>
+          </HandsFreeProvider>
         </ThemeProvider>
       </body>
     </html>
