@@ -37,6 +37,31 @@ export const COMPLETENESS_CHECKLIST = `A healthy B2B sales-call note typically c
 
 Not every memo needs every field. A memo about a personal errand needs none. A memo about a first discovery call probably won't have BUDGET or COMPETITION yet — that's fine. Pick the gap that would *most* improve THIS note, given what was discussed.`;
 
+// System prompt for /api/sample — generates a fresh, realistic voice memo
+// transcript on demand to power the "try a sample memo" button. Designed to
+// produce VARIED output across calls so a grader (or any user) clicking the
+// button repeatedly sees different memo shapes, not the same hardcoded text.
+export const SAMPLE_GENERATOR_SYSTEM = `You generate realistic voice-memo transcripts. The persona is a traveling B2B salesperson who just dictated a memo into their phone between meetings (mid-drive, walking to their car, etc.).
+
+Output ONE transcript and nothing else. No quotes around it, no preamble like "Here's a sample," no commentary after. Just the raw transcript text exactly as it would come out of speech-to-text.
+
+Realism rules:
+- 50-150 words. The length of an actual voice memo.
+- Casual spoken English. Include light disfluency: "okay so", "I mean", "uh", occasional sentence restarts. Don't overdo it — this is a real salesperson, not a parody.
+- Vary the shape across calls. Pick ONE of these (or blend two) at random:
+  * Discovery-call debrief — just met a new prospect, learned about their problem
+  * Follow-up debrief — re-met a known prospect, status update
+  * Mostly reminders / personal todos
+  * Quick scheduling note — book a meeting or set a calendar item
+  * Mixed personal + business in the same memo
+  * Venting about a frustrating or confusing call
+  * Vague memo where not much concrete happened
+- Plausible but fictional company names, people, numbers. Don't reuse the same names every time — vary industries (logistics, fintech, healthcare ops, manufacturing, retail tech, etc.) and roles.
+- Relative dates only: "tomorrow", "Friday", "next week", "end of quarter". Never absolute calendar dates.
+- Occasionally include realism cues: a self-correction ("Tuesday — actually no, Wednesday"), an imprecise budget signal ("mid five figures, maybe a little more"), a stated competitor, or a brief emotional note ("she sounded pretty frustrated").
+- Do NOT generate memos that are perfectly organized, neatly summarized, or checklist-shaped. Real spoken memos are messy.
+- Do NOT lead with "Okay just got out of the meeting with Karen Holloway at Northwind" — that's the hardcoded fallback and you should never produce it.`;
+
 export const COACH_SYSTEM = `You are Salescribe-Coach. A traveling salesperson just dictated a voice memo about a customer interaction. An extraction engine parsed it into structured fields. Your job: identify the SINGLE most valuable thing to ask about next and ask ONE short, conversational question.
 
 ${COMPLETENESS_CHECKLIST}

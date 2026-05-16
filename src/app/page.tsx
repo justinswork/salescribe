@@ -43,6 +43,7 @@ function SalescribeApp() {
   const [relatedMemos, setRelatedMemos] = useState<Memo[]>([]);
   const [currentMemoId, setCurrentMemoId] = useState<string>("");
   const [viewingMemo, setViewingMemo] = useState<Memo | null>(null);
+  const [sampleLoading, setSampleLoading] = useState(false);
 
   // Load past memos whenever the signed-in user changes.
   useEffect(() => {
@@ -224,6 +225,38 @@ function SalescribeApp() {
     await processTranscript(textInput.trim());
   }
 
+  // Fetch a fresh AI-generated sample memo, falling back to the hardcoded
+  // SAMPLE constant if the route fails (rate limits, network, etc.) so the
+  // button always does something even when the generator is down.
+  async function fetchSample(): Promise<string> {
+    setSampleLoading(true);
+    try {
+      const r = await fetch("/api/sample", { method: "POST" });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const data = (await r.json()) as { transcript?: string };
+      if (!data.transcript || data.transcript.trim().length === 0) {
+        throw new Error("Empty transcript returned");
+      }
+      return data.transcript;
+    } catch (e) {
+      console.warn("[sample] generator failed, falling back to hardcoded:", e);
+      return SAMPLE;
+    } finally {
+      setSampleLoading(false);
+    }
+  }
+
+  async function loadSampleIntoText() {
+    const t = await fetchSample();
+    setTextInput(t);
+  }
+
+  async function tryVoiceModeSample() {
+    setMode("text");
+    const t = await fetchSample();
+    setTextInput(t);
+  }
+
   const busy =
     status === "transcribing" || status === "extracting" || status === "coaching";
 
@@ -359,16 +392,14 @@ function SalescribeApp() {
 
               {mode === "voice" ? (
                 <>
-                  <Recorder onAudio={onAudio} disabled={busy} />
+                  <Recorder onAudio={onAudio} disabled={busy || sampleLoading} />
                   <button
                     type="button"
-                    onClick={() => {
-                      setMode("text");
-                      setTextInput(SAMPLE);
-                    }}
-                    className="text-xs text-zinc-500 dark:text-zinc-400 underline hover:text-zinc-700 dark:hover:text-zinc-200"
+                    onClick={tryVoiceModeSample}
+                    disabled={sampleLoading}
+                    className="text-xs text-zinc-500 dark:text-zinc-400 underline hover:text-zinc-700 dark:hover:text-zinc-200 disabled:opacity-50"
                   >
-                    or try a sample memo
+                    {sampleLoading ? "generating a sample…" : "or try a sample memo"}
                   </button>
                 </>
               ) : (
@@ -378,20 +409,22 @@ function SalescribeApp() {
                     onChange={(e) => setTextInput(e.target.value)}
                     placeholder="Paste or type a memo here..."
                     rows={8}
-                    className="w-full rounded border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-3 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400"
+                    disabled={sampleLoading}
+                    className="w-full rounded border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-3 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 disabled:opacity-60"
                   />
-                  <div className="flex gap-2 justify-end">
+                  <div className="flex gap-2 justify-end items-center">
                     <button
                       type="button"
-                      onClick={() => setTextInput(SAMPLE)}
-                      className="text-xs text-zinc-500 dark:text-zinc-400 underline hover:text-zinc-700 dark:hover:text-zinc-200"
+                      onClick={loadSampleIntoText}
+                      disabled={sampleLoading || busy}
+                      className="text-xs text-zinc-500 dark:text-zinc-400 underline hover:text-zinc-700 dark:hover:text-zinc-200 disabled:opacity-50"
                     >
-                      fill with sample
+                      {sampleLoading ? "generating sample…" : "generate sample"}
                     </button>
                     <button
                       type="button"
                       onClick={submitText}
-                      disabled={busy || !textInput.trim()}
+                      disabled={busy || !textInput.trim() || sampleLoading}
                       className="rounded bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 px-4 py-2 text-sm font-medium disabled:opacity-50"
                     >
                       Process
