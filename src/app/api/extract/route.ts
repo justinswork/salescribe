@@ -1,9 +1,10 @@
 import { NextRequest } from "next/server";
-import { anthropic, MODELS } from "@/lib/clients";
+import { getAnthropic, MODELS } from "@/lib/clients";
 import { EXTRACTOR_SYSTEM } from "@/lib/prompts";
 import { extractionToolSchema, type Extraction, type ChatMessage } from "@/lib/schema";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
 type Body = {
@@ -36,7 +37,7 @@ export async function POST(req: NextRequest) {
 Transcript:
 ${transcript}${dialogueAddendum}`;
 
-  const response = await anthropic.messages.create({
+  const response = await getAnthropic().messages.create({
     model: MODELS.extractor,
     max_tokens: 2048,
     system: EXTRACTOR_SYSTEM,

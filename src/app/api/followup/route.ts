@@ -1,9 +1,10 @@
 import { NextRequest } from "next/server";
-import { anthropic, MODELS } from "@/lib/clients";
+import { getAnthropic, MODELS } from "@/lib/clients";
 import { COACH_SYSTEM } from "@/lib/prompts";
 import { followupToolSchema, type Extraction, type ChatMessage, type FollowupResult, type Memo } from "@/lib/schema";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
 type Body = {
@@ -69,7 +70,7 @@ ${dialogue}${pastBlock}
 
 Decide: is the note reasonably complete? If yes, set done=true. If no, choose question_type and ask the single most valuable follow-up.`;
 
-  const response = await anthropic.messages.create({
+  const response = await getAnthropic().messages.create({
     model: MODELS.coach,
     max_tokens: 512,
     system: COACH_SYSTEM,

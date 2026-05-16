@@ -26,8 +26,30 @@ function readKey(name: string): string | undefined {
   return undefined;
 }
 
-export const anthropic = new Anthropic({ apiKey: readKey("ANTHROPIC_API_KEY") });
-export const openai = new OpenAI({ apiKey: readKey("OPENAI_API_KEY") });
+// Lazy singletons. We construct the SDK clients on first use rather than at module
+// load so they don't throw during Next.js's "collect page data" step at build time,
+// where no API keys are available (Firebase App Hosting injects secrets at runtime,
+// not at build time).
+let _anthropic: Anthropic | undefined;
+let _openai: OpenAI | undefined;
+
+export function getAnthropic(): Anthropic {
+  if (!_anthropic) {
+    const apiKey = readKey("ANTHROPIC_API_KEY");
+    if (!apiKey) throw new Error("ANTHROPIC_API_KEY is not configured");
+    _anthropic = new Anthropic({ apiKey });
+  }
+  return _anthropic;
+}
+
+export function getOpenAI(): OpenAI {
+  if (!_openai) {
+    const apiKey = readKey("OPENAI_API_KEY");
+    if (!apiKey) throw new Error("OPENAI_API_KEY is not configured");
+    _openai = new OpenAI({ apiKey });
+  }
+  return _openai;
+}
 
 export const MODELS = {
   extractor: "claude-sonnet-4-6",
