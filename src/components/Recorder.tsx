@@ -1,9 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { listenLive, type ListenHandle } from "@/lib/speech";
 
 type Props = {
   onAudio: (blob: Blob, filename: string) => void;
+  onLiveTranscript?: (text: string) => void;
   disabled?: boolean;
 };
 
@@ -36,7 +38,7 @@ function formatMMSS(totalSeconds: number): string {
   return `${m}:${s}`;
 }
 
-export default function Recorder({ onAudio, disabled }: Props) {
+export default function Recorder({ onAudio, onLiveTranscript, disabled }: Props) {
   const [state, setState] = useState<"idle" | "recording">("idle");
   const [elapsed, setElapsed] = useState(0);
   const [permError, setPermError] = useState<string>("");
@@ -44,6 +46,7 @@ export default function Recorder({ onAudio, disabled }: Props) {
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const liveHandleRef = useRef<ListenHandle | null>(null);
 
   const stop = useCallback(() => {
     const r = recorderRef.current;
@@ -52,6 +55,8 @@ export default function Recorder({ onAudio, disabled }: Props) {
       clearInterval(tickRef.current);
       tickRef.current = null;
     }
+    liveHandleRef.current?.stop();
+    liveHandleRef.current = null;
     setState("idle");
   }, []);
 
@@ -61,6 +66,7 @@ export default function Recorder({ onAudio, disabled }: Props) {
       const r = recorderRef.current;
       if (r && r.state !== "inactive") r.stop();
       r?.stream.getTracks().forEach((t) => t.stop());
+      liveHandleRef.current?.stop();
     };
   }, []);
 
@@ -93,6 +99,17 @@ export default function Recorder({ onAudio, disabled }: Props) {
       setState("recording");
       setElapsed(0);
       tickRef.current = setInterval(() => setElapsed((s) => s + 1), 1000);
+
+      // Live preview via browser SpeechRecognition. Runs alongside MediaRecorder
+      // and shares the same mic. Falls back to a no-op handle in browsers
+      // without SpeechRecognition support (e.g. Firefox) — the recording flow
+      // is otherwise identical.
+      if (onLiveTranscript) {
+        onLiveTranscript("");
+        liveHandleRef.current = listenLive({
+          onPartialTranscript: onLiveTranscript,
+        });
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Microphone access denied.";
       setPermError(message);

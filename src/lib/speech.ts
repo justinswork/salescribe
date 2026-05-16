@@ -118,6 +118,80 @@ export type ListenOptions = {
 
 export type ListenHandle = { stop: () => void };
 
+// ----------------------------------------------------------------------------
+// Live preview: continuous transcription with no command detection, no
+// silence finalization. Used during memo recording to render a live preview
+// alongside the MediaRecorder. The eventual authoritative transcript still
+// comes from Whisper on the server; this is just for "I see my words" UX.
+// ----------------------------------------------------------------------------
+export function listenLive(opts: {
+  onPartialTranscript: (text: string) => void;
+  onError?: (e: Error) => void;
+}): ListenHandle {
+  const Ctor = getRecognitionCtor();
+  if (!Ctor) {
+    // Not supported (e.g., Firefox). Return a no-op handle — the caller still
+    // gets the recording experience, just without the live preview.
+    return { stop: () => {} };
+  }
+
+  const rec = new Ctor();
+  rec.continuous = true;
+  rec.interimResults = true;
+  rec.lang = "en-US";
+
+  let finalText = "";
+  let stopped = false;
+
+  rec.onresult = (e) => {
+    if (stopped) return;
+    let interim = "";
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const result = e.results[i];
+      if (result.isFinal) {
+        finalText += result[0].transcript + " ";
+      } else {
+        interim += result[0].transcript;
+      }
+    }
+    opts.onPartialTranscript((finalText + interim).trim());
+  };
+
+  rec.onerror = (e) => {
+    if (stopped) return;
+    if (e.error === "no-speech" || e.error === "aborted") return;
+    opts.onError?.(new Error(e.error || "speech recognition error"));
+  };
+
+  // Some browsers auto-end the session after a silence even in continuous
+  // mode. Restart so the user keeps seeing words as they keep talking.
+  rec.onend = () => {
+    if (stopped) return;
+    try {
+      rec.start();
+    } catch {
+      // already stopped or in a state that rejects start; safe to ignore.
+    }
+  };
+
+  try {
+    rec.start();
+  } catch (e) {
+    opts.onError?.(e instanceof Error ? e : new Error(String(e)));
+  }
+
+  return {
+    stop: () => {
+      stopped = true;
+      try {
+        rec.stop();
+      } catch {
+        // best-effort
+      }
+    },
+  };
+}
+
 export function listenForReply(opts: ListenOptions): ListenHandle {
   const Ctor = getRecognitionCtor();
   if (!Ctor) {

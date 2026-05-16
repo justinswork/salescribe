@@ -49,6 +49,11 @@ function SalescribeApp() {
   const [viewingMemo, setViewingMemo] = useState<Memo | null>(null);
   const [sampleLoading, setSampleLoading] = useState(false);
 
+  // Live transcript from the browser's SpeechRecognition during memo recording.
+  // This is just a UX preview — the authoritative transcript still comes from
+  // Whisper on the server after the user stops recording.
+  const [liveTranscript, setLiveTranscript] = useState("");
+
   // Hands-free state. `speaking` is true while TTS is reading the coach's
   // question; `listening` is true while STT is collecting the salesperson's
   // spoken reply. `partialReply` mirrors the live transcript so the UI can
@@ -93,6 +98,7 @@ function SalescribeApp() {
     setRelatedMemos([]);
     setCurrentMemoId("");
     setViewingMemo(null);
+    setLiveTranscript("");
   }
 
   // On unmount, kill any in-flight speech or listening so the user doesn't get
@@ -181,6 +187,7 @@ function SalescribeApp() {
   }
 
   async function processTranscript(text: string) {
+    setLiveTranscript("");
     setTranscript(text);
     setStatus("extracting");
     setCurrentMemoId(newMemoId());
@@ -487,7 +494,19 @@ function SalescribeApp() {
 
               {mode === "voice" ? (
                 <>
-                  <Recorder onAudio={onAudio} disabled={busy || sampleLoading} />
+                  <Recorder
+                    onAudio={onAudio}
+                    onLiveTranscript={setLiveTranscript}
+                    disabled={busy || sampleLoading}
+                  />
+                  {liveTranscript && (
+                    <div className="w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 p-3 text-sm italic text-zinc-700 dark:text-zinc-300">
+                      <div className="text-xs font-medium not-italic text-zinc-500 dark:text-zinc-400 mb-1 uppercase tracking-wide">
+                        live preview
+                      </div>
+                      {liveTranscript}
+                    </div>
+                  )}
                   <button
                     type="button"
                     onClick={tryVoiceModeSample}

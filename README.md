@@ -49,6 +49,12 @@ A salesperson dictating between meetings shouldn't have to look at a screen. Wit
 
 The toggle state persists in `localStorage`. A manual input row stays visible underneath the listening indicator so you can still type a reply if the recognizer mis-hears.
 
+## Live transcript preview
+
+While you're recording, a live partial transcript renders under the record button so you can see roughly what's being captured. It comes from the browser's `SpeechRecognition` API (same one that powers the hands-free reply listener) — it's free, instant, and slightly less accurate than Whisper on proper nouns. When you stop recording, the audio is uploaded to Whisper for the authoritative transcript, and Whisper's result replaces the preview.
+
+In browsers without `SpeechRecognition` (Firefox), the live preview is silently skipped — recording still works, you just see the "Transcribing…" spinner without the preview. See [`listenLive` in `src/lib/speech.ts`](src/lib/speech.ts).
+
 ## Recording limits
 
 A single recording auto-stops at **5 minutes** and submits whatever's been captured so far — same code path as clicking stop manually, so no data is lost. The timer in [`Recorder.tsx`](src/components/Recorder.tsx) shows `MM:SS / 5:00 max` and turns amber starting at 80% of the cap so you have time to wrap up.
