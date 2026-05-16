@@ -45,7 +45,10 @@ A salesperson dictating between meetings shouldn't have to look at a screen. Wit
 4. Speak your answer. After ~3 seconds of silence the app treats it as complete, re-extracts, and reads the next question.
 5. Say any of `"end notes"`, `"save and close"`, `"save the memo"`, `"that's all"`, `"we're done"`, or `"done recording"` to immediately finalize the memo. The app speaks **"Saved."** and shows the saved state.
 
-**Implementation:** browser-native [`speechSynthesis`](https://developer.mozilla.org/en-US/docs/Web/API/SpeechSynthesis) for TTS and [`SpeechRecognition`](https://developer.mozilla.org/en-US/docs/Web/API/SpeechRecognition) for STT — see [`src/lib/speech.ts`](src/lib/speech.ts). No extra API keys, no extra cost, no network round-trip on each utterance. The Web Speech APIs are supported in Chrome, Edge, and Safari (including iOS Safari 14.5+); the toggle is automatically disabled in Firefox, which doesn't support `SpeechRecognition`.
+**Implementation:**
+- **TTS** is OpenAI `tts-1` with voice `nova` via [`/api/speak`](src/app/api/speak/route.ts). Sounds genuinely conversational at ~$0.0015 per question (~$0.005 total per memo). Browser-native [`speechSynthesis`](https://developer.mozilla.org/en-US/docs/Web/API/SpeechSynthesis) is kept as a silent fallback in case the route fails (rate-limited, network, autoplay blocked).
+- **STT** is browser-native [`SpeechRecognition`](https://developer.mozilla.org/en-US/docs/Web/API/SpeechRecognition) — instant, free, no key. Supported in Chrome, Edge, and Safari (including iOS Safari 14.5+); the hands-free toggle is automatically disabled in Firefox, which doesn't ship this API.
+- All speech glue lives in [`src/lib/speech.ts`](src/lib/speech.ts).
 
 The toggle state persists in `localStorage`. A manual input row stays visible underneath the listening indicator so you can still type a reply if the recognizer mis-hears.
 
@@ -221,7 +224,8 @@ Honesty note up front: when I finally ran the eval suite against live APIs, **v1
 - **Next.js 16** (App Router, Route Handlers)
 - **OpenAI Whisper** (`whisper-1`) for transcription
 - **Anthropic Claude Sonnet 4.6** (`claude-sonnet-4-6`) for extraction, follow-up coaching, and sample-memo generation
-- **Web Speech APIs** (`speechSynthesis` + `SpeechRecognition`) for hands-free question narration and spoken replies
+- **OpenAI TTS** (`tts-1`, voice `nova`) for natural-sounding hands-free question narration; browser `speechSynthesis` as fallback
+- **Browser SpeechRecognition API** for hands-free reply listening and the live transcript preview during recording
 - **Firebase Authentication** (Google provider) for sign-in
 - **Cloud Firestore** for per-user memo persistence
 - **Tailwind v4** for UI
@@ -236,7 +240,8 @@ src/
 │   │   ├── transcribe/route.ts   # Whisper
 │   │   ├── extract/route.ts      # Claude extractor + tool_use
 │   │   ├── followup/route.ts     # Claude coach + tool_use + RAG injection
-│   │   └── sample/route.ts       # Claude generator for fresh sample memos
+│   │   ├── sample/route.ts       # Claude generator for fresh sample memos
+│   │   └── speak/route.ts        # OpenAI tts-1 narration for hands-free mode
 │   ├── layout.tsx                # wraps tree in AuthProvider
 │   └── page.tsx                  # AuthGuard → SalescribeApp (state machine)
 ├── components/

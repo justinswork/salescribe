@@ -58,26 +58,93 @@ export function isSTTSupported(): boolean {
 // ----------------------------------------------------------------------------
 // TTS
 // ----------------------------------------------------------------------------
-export function speak(text: string, opts?: { rate?: number; pitch?: number }): Promise<void> {
+//
+// Two layers:
+//   1. Primary: server-side TTS via /api/speak (OpenAI tts-1, voice "nova").
+//      Sounds genuinely conversational; ~1-2s of latency for the first byte.
+//   2. Fallback: browser speechSynthesis. Instant but robotic. Triggered if
+//      the server route fails (rate limit, network, autoplay blocked, etc).
+//
+// speak() returns a Promise that resolves when audio playback ends, regardless
+// of which path actually produced the sound. Callers don't need to know which.
+
+let currentAudio: HTMLAudioElement | null = null;
+
+export async function speak(
+  text: string,
+  opts?: { rate?: number; pitch?: number; voice?: string },
+): Promise<void> {
+  if (!text.trim()) return;
+  cancelSpeech();
+  try {
+    const res = await fetch("/api/speak", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, voice: opts?.voice }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const blob = await res.blob();
+    if (blob.size === 0) throw new Error("Empty audio response");
+
+    const url = URL.createObjectURL(blob);
+    await new Promise<void>((resolve) => {
+      const audio = new Audio(url);
+      currentAudio = audio;
+      const cleanup = () => {
+        URL.revokeObjectURL(url);
+        if (currentAudio === audio) currentAudio = null;
+      };
+      audio.onended = () => {
+        cleanup();
+        resolve();
+      };
+      audio.onerror = () => {
+        cleanup();
+        // Resolve here; we'll fall through to browser TTS below if needed.
+        fallbackSpeak(text, opts).then(resolve);
+      };
+      audio.play().catch(() => {
+        // Autoplay blocked or other playback failure.
+        cleanup();
+        fallbackSpeak(text, opts).then(resolve);
+      });
+    });
+  } catch {
+    // Network / 5xx / etc — silently fall back to browser TTS.
+    await fallbackSpeak(text, opts);
+  }
+}
+
+function fallbackSpeak(
+  text: string,
+  opts?: { rate?: number; pitch?: number },
+): Promise<void> {
   return new Promise((resolve) => {
     if (!isTTSSupported() || !text.trim()) {
       resolve();
       return;
     }
-    // Cancel any in-flight utterance so questions don't queue up.
     window.speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
     u.rate = opts?.rate ?? 1.0;
     u.pitch = opts?.pitch ?? 1.0;
     u.lang = "en-US";
     u.onend = () => resolve();
-    // Treat errors as benign — don't block the flow if TTS fails.
     u.onerror = () => resolve();
     window.speechSynthesis.speak(u);
   });
 }
 
 export function cancelSpeech(): void {
+  if (currentAudio) {
+    try {
+      currentAudio.pause();
+      currentAudio.src = "";
+    } catch {
+      // ignore
+    }
+    currentAudio = null;
+  }
   if (isTTSSupported()) window.speechSynthesis.cancel();
 }
 

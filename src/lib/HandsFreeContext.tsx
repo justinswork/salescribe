@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
-import { isSTTSupported, isTTSSupported } from "./speech";
+import { isSTTSupported } from "./speech";
 
 type State = {
   enabled: boolean;
@@ -23,7 +23,10 @@ export function HandsFreeProvider({ children }: { children: ReactNode }) {
   const [supported, setSupported] = useState(true);
 
   useEffect(() => {
-    setSupported(isTTSSupported() && isSTTSupported());
+    // TTS now has a server-side path (/api/speak) that works in every
+    // browser, so we only gate on STT support. The browser SpeechRecognition
+    // API is the actual blocker — Firefox is the notable holdout.
+    setSupported(isSTTSupported());
     try {
       const raw = window.localStorage.getItem(STORAGE_KEY);
       if (raw === "true") setEnabled(true);

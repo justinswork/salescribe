@@ -55,4 +55,5 @@ export const MODELS = {
   extractor: "claude-sonnet-4-6",
   coach: "claude-sonnet-4-6",
   whisper: "whisper-1",
+  tts: "tts-1",
 } as const;
