@@ -364,9 +364,126 @@ function SalescribeApp() {
     extracting: "Pulling out structured details...",
     coaching: "Checking for gaps and past context...",
     ready_for_reply: "",
-    done: "Memo saved.",
-    error: "Something went wrong.",
+    // "done" and "error" intentionally empty: the primary action card
+    // and the error block render their own confirmation/diagnostic UI,
+    // so duplicating it in the gray status banner is just noise.
+    done: "",
+    error: "",
   };
+
+  // Conversation is in flight whenever we have a transcript and haven't yet
+  // finalized or errored out. Used to flip the follow-up chat panel between
+  // a prominent top slot (so the question is impossible to miss) and a
+  // compact bottom slot for review after the memo is saved.
+  const conversationActive = Boolean(transcript) && status !== "done" && status !== "error";
+
+  // The follow-up chat panel. Rendered in one of two positions depending on
+  // conversationActive — at the top while the coach is asking questions, then
+  // demoted to the bottom (smaller heading, muted background) for review once
+  // the memo is saved.
+  const followUpSection = (chat.length > 0 || currentQuestion) && (
+    <section
+      className={`rounded-lg border p-4 ${
+        conversationActive
+          ? "border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950"
+          : "border-zinc-200 dark:border-zinc-800 bg-zinc-50/60 dark:bg-zinc-900/40"
+      }`}
+    >
+      <h2
+        className={`font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-3 ${
+          conversationActive ? "text-sm" : "text-xs"
+        }`}
+      >
+        {conversationActive ? "Follow-up" : "Follow-up conversation"}
+      </h2>
+      <div className="flex flex-col gap-3">
+        {chat.map((m, i) => (
+          <div
+            key={i}
+            className={`flex ${m.role === "assistant" ? "justify-start" : "justify-end"}`}
+          >
+            <div
+              className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${
+                m.role === "assistant"
+                  ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100"
+                  : "bg-blue-600 text-white"
+              }`}
+            >
+              {m.content}
+            </div>
+          </div>
+        ))}
+        {currentQuestion && status === "ready_for_reply" && (
+          <>
+            <div className="flex justify-start">
+              <div className="max-w-[80%] flex flex-col gap-1">
+                {currentQuestionType === "history" && (
+                  <span className="text-xs text-amber-700 dark:text-amber-400 font-medium">
+                    ↻ referencing a past memo
+                  </span>
+                )}
+                {speaking && (
+                  <span className="text-xs text-blue-700 dark:text-blue-400 font-medium inline-flex items-center gap-1">
+                    <span className="inline-block h-2 w-2 rounded-full bg-blue-600 animate-pulse" />
+                    reading question aloud…
+                  </span>
+                )}
+                <div className="rounded-lg px-3 py-2 text-sm bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100">
+                  {currentQuestion}
+                </div>
+              </div>
+            </div>
+            {listening && (
+              <div className="rounded-lg border border-blue-300 dark:border-blue-900/60 bg-blue-50 dark:bg-blue-950/20 p-3 flex flex-col gap-1">
+                <div className="text-xs font-medium text-blue-700 dark:text-blue-400 inline-flex items-center gap-1.5">
+                  <span className="inline-block h-2 w-2 rounded-full bg-blue-600 animate-pulse" />
+                  listening… say <span className="font-mono">&ldquo;end notes&rdquo;</span> to save and close
+                </div>
+                {partialReply && (
+                  <div className="text-sm text-zinc-700 dark:text-zinc-300 italic">
+                    {partialReply}
+                  </div>
+                )}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={replyDraft}
+                onChange={(e) => setReplyDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void submitReply();
+                }}
+                placeholder={
+                  handsFree.enabled
+                    ? "or type a reply manually…"
+                    : "Your answer..."
+                }
+                disabled={speaking || listening}
+                className="flex-1 rounded border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 disabled:opacity-60"
+                autoFocus={!handsFree.enabled}
+              />
+              <button
+                type="button"
+                onClick={() => void submitReply()}
+                disabled={!replyDraft.trim() || busy || speaking || listening}
+                className="rounded bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 px-4 py-2 text-sm font-medium disabled:opacity-50"
+              >
+                Send
+              </button>
+              <button
+                type="button"
+                onClick={finalizeNow}
+                className="text-sm text-zinc-500 dark:text-zinc-400 px-3"
+              >
+                Done
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </section>
+  );
 
   // Read-only view of a saved memo.
   if (viewingMemo) {
@@ -552,7 +669,27 @@ function SalescribeApp() {
           </>
         )}
 
-        {(busy || statusLabel[status]) && (
+        {/* Conversation-active block: the chat panel and its status banner
+            float to the top so the coach's question is impossible to miss.
+            Once the memo is finalized (status="done"), the panel falls back
+            to a compact slot near the bottom of the page — see below. */}
+        {conversationActive && (
+          <>
+            {(busy || statusLabel[status]) && (
+              <div className="flex items-center gap-3 text-sm text-zinc-600 dark:text-zinc-400">
+                {busy && <span className="inline-block h-3 w-3 rounded-full bg-zinc-400 animate-pulse" />}
+                <span>{statusLabel[status]}</span>
+              </div>
+            )}
+            {followUpSection}
+          </>
+        )}
+
+        {/* Status banner in its original position only when we're NOT in an
+            active conversation (e.g. transcribing audio before the transcript
+            arrives). When the conversation is active it renders above with
+            the chat panel instead. */}
+        {!conversationActive && (busy || statusLabel[status]) && (
           <div className="flex items-center gap-3 text-sm text-zinc-600 dark:text-zinc-400">
             {busy && <span className="inline-block h-3 w-3 rounded-full bg-zinc-400 animate-pulse" />}
             <span>{statusLabel[status]}</span>
@@ -626,99 +763,7 @@ function SalescribeApp() {
           </section>
         )}
 
-        {(chat.length > 0 || currentQuestion) && (
-          <section className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-4">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-3">
-              Follow-up
-            </h2>
-            <div className="flex flex-col gap-3">
-              {chat.map((m, i) => (
-                <div
-                  key={i}
-                  className={`flex ${m.role === "assistant" ? "justify-start" : "justify-end"}`}
-                >
-                  <div
-                    className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${
-                      m.role === "assistant"
-                        ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100"
-                        : "bg-blue-600 text-white"
-                    }`}
-                  >
-                    {m.content}
-                  </div>
-                </div>
-              ))}
-              {currentQuestion && status === "ready_for_reply" && (
-                <>
-                  <div className="flex justify-start">
-                    <div className="max-w-[80%] flex flex-col gap-1">
-                      {currentQuestionType === "history" && (
-                        <span className="text-xs text-amber-700 dark:text-amber-400 font-medium">
-                          ↻ referencing a past memo
-                        </span>
-                      )}
-                      {speaking && (
-                        <span className="text-xs text-blue-700 dark:text-blue-400 font-medium inline-flex items-center gap-1">
-                          <span className="inline-block h-2 w-2 rounded-full bg-blue-600 animate-pulse" />
-                          reading question aloud…
-                        </span>
-                      )}
-                      <div className="rounded-lg px-3 py-2 text-sm bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100">
-                        {currentQuestion}
-                      </div>
-                    </div>
-                  </div>
-                  {listening && (
-                    <div className="rounded-lg border border-blue-300 dark:border-blue-900/60 bg-blue-50 dark:bg-blue-950/20 p-3 flex flex-col gap-1">
-                      <div className="text-xs font-medium text-blue-700 dark:text-blue-400 inline-flex items-center gap-1.5">
-                        <span className="inline-block h-2 w-2 rounded-full bg-blue-600 animate-pulse" />
-                        listening… say <span className="font-mono">&ldquo;end notes&rdquo;</span> to save and close
-                      </div>
-                      {partialReply && (
-                        <div className="text-sm text-zinc-700 dark:text-zinc-300 italic">
-                          {partialReply}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={replyDraft}
-                      onChange={(e) => setReplyDraft(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") void submitReply();
-                      }}
-                      placeholder={
-                        handsFree.enabled
-                          ? "or type a reply manually…"
-                          : "Your answer..."
-                      }
-                      disabled={speaking || listening}
-                      className="flex-1 rounded border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 disabled:opacity-60"
-                      autoFocus={!handsFree.enabled}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => void submitReply()}
-                      disabled={!replyDraft.trim() || busy || speaking || listening}
-                      className="rounded bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 px-4 py-2 text-sm font-medium disabled:opacity-50"
-                    >
-                      Send
-                    </button>
-                    <button
-                      type="button"
-                      onClick={finalizeNow}
-                      className="text-sm text-zinc-500 dark:text-zinc-400 px-3"
-                    >
-                      Done
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          </section>
-        )}
+        {!conversationActive && followUpSection}
 
         {transcript && status !== "done" && (
           <button
