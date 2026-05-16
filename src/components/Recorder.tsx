@@ -1,15 +1,20 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 type Props = {
   onAudio: (blob: Blob, filename: string) => void;
   disabled?: boolean;
 };
 
-// Picks the best container/codec the browser can record. Chrome/Edge/Firefox all
-// support webm/opus; Safari uses mp4/aac. Returning the matching filename keeps
-// Whisper happy on the server (it dispatches by extension).
+// Hard cap on a single recording. Picked to comfortably fit inside every
+// downstream constraint: OpenAI Whisper's 25 MB body limit (~100 min of
+// webm/opus), Cloud Run's 5-minute request timeout for the transcription
+// call, and cost runaway protection against an accidentally-forgotten
+// recording. Most real sales voice memos are <90 seconds, so this is a
+// soft ceiling for the 99% case rather than a constraint anyone bumps into.
+const MAX_DURATION_SECONDS = 5 * 60; // 5 minutes
+
 function pickMimeAndExt(): { mime: string; ext: string } {
   const candidates: Array<{ mime: string; ext: string }> = [
     { mime: "audio/webm;codecs=opus", ext: "webm" },
@@ -25,6 +30,12 @@ function pickMimeAndExt(): { mime: string; ext: string } {
   return { mime: "", ext: "webm" };
 }
 
+function formatMMSS(totalSeconds: number): string {
+  const m = String(Math.floor(totalSeconds / 60)).padStart(2, "0");
+  const s = String(totalSeconds % 60).padStart(2, "0");
+  return `${m}:${s}`;
+}
+
 export default function Recorder({ onAudio, disabled }: Props) {
   const [state, setState] = useState<"idle" | "recording">("idle");
   const [elapsed, setElapsed] = useState(0);
@@ -34,6 +45,16 @@ export default function Recorder({ onAudio, disabled }: Props) {
   const chunksRef = useRef<Blob[]>([]);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  const stop = useCallback(() => {
+    const r = recorderRef.current;
+    if (r && r.state !== "inactive") r.stop();
+    if (tickRef.current) {
+      clearInterval(tickRef.current);
+      tickRef.current = null;
+    }
+    setState("idle");
+  }, []);
+
   useEffect(() => {
     return () => {
       if (tickRef.current) clearInterval(tickRef.current);
@@ -42,6 +63,15 @@ export default function Recorder({ onAudio, disabled }: Props) {
       r?.stream.getTracks().forEach((t) => t.stop());
     };
   }, []);
+
+  // Auto-stop when the recording hits the hard cap. Uses the same code path
+  // as a manual stop click, so the audio that has been captured so far is
+  // submitted normally — nothing is lost.
+  useEffect(() => {
+    if (state === "recording" && elapsed >= MAX_DURATION_SECONDS) {
+      stop();
+    }
+  }, [state, elapsed, stop]);
 
   async function start() {
     setPermError("");
@@ -69,15 +99,13 @@ export default function Recorder({ onAudio, disabled }: Props) {
     }
   }
 
-  function stop() {
-    const r = recorderRef.current;
-    if (r && r.state !== "inactive") r.stop();
-    if (tickRef.current) clearInterval(tickRef.current);
-    setState("idle");
-  }
-
-  const mm = String(Math.floor(elapsed / 60)).padStart(2, "0");
-  const ss = String(elapsed % 60).padStart(2, "0");
+  // Color the timer amber starting at 80% of the cap so the user has a
+  // chance to wrap up before the auto-stop fires.
+  const nearLimit = state === "recording" && elapsed >= 0.8 * MAX_DURATION_SECONDS;
+  const timerLabel =
+    state === "recording"
+      ? `Recording... ${formatMMSS(elapsed)} / ${formatMMSS(MAX_DURATION_SECONDS)} max`
+      : "Tap to record";
 
   return (
     <div className="flex flex-col items-center gap-3">
@@ -101,8 +129,14 @@ export default function Recorder({ onAudio, disabled }: Props) {
           <span className="h-6 w-6 rounded-sm bg-white" />
         </button>
       )}
-      <div className="text-sm text-zinc-600 dark:text-zinc-400 tabular-nums">
-        {state === "recording" ? `Recording... ${mm}:${ss}` : "Tap to record"}
+      <div
+        className={`text-sm tabular-nums ${
+          nearLimit
+            ? "text-amber-700 dark:text-amber-400 font-medium"
+            : "text-zinc-600 dark:text-zinc-400"
+        }`}
+      >
+        {timerLabel}
       </div>
       {permError && (
         <div className="text-sm text-red-600 max-w-xs text-center">{permError}</div>

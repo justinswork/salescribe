@@ -49,6 +49,12 @@ A salesperson dictating between meetings shouldn't have to look at a screen. Wit
 
 The toggle state persists in `localStorage`. A manual input row stays visible underneath the listening indicator so you can still type a reply if the recognizer mis-hears.
 
+## Recording limits
+
+A single recording auto-stops at **5 minutes** and submits whatever's been captured so far — same code path as clicking stop manually, so no data is lost. The timer in [`Recorder.tsx`](src/components/Recorder.tsx) shows `MM:SS / 5:00 max` and turns amber starting at 80% of the cap so you have time to wrap up.
+
+This isn't a model constraint — Whisper's actual file-size ceiling is ~100 minutes of webm/opus. The 5-minute cap is a deliberate UX + cost guardrail: it's longer than 99% of real sales voice memos (most are <90 s), comfortably inside Cloud Run's 5-minute request timeout for transcription, and a defense against the accidentally-forgotten recording that would otherwise silently burn API credit.
+
 ## Syllabus coverage
 
 | Course objective | Where it shows up |
