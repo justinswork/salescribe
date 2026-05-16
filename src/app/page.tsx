@@ -358,8 +358,11 @@ function SalescribeApp() {
             <span className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
               Salescribe
             </span>
-            <span className="ml-3 align-middle text-xs font-mono font-normal text-zinc-400 dark:text-zinc-500">
-              v {process.env.NEXT_PUBLIC_GIT_SHA}
+            <span
+              className="ml-3 align-middle text-xs font-mono font-normal text-zinc-400 dark:text-zinc-500"
+              title={`commit ${process.env.NEXT_PUBLIC_GIT_SHA}`}
+            >
+              v{process.env.NEXT_PUBLIC_APP_VERSION}
             </span>
           </button>
           <div className="flex items-center gap-2">
