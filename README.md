@@ -58,6 +58,28 @@ While you're recording, a live partial transcript renders under the record butto
 
 In browsers without `SpeechRecognition` (Firefox), the live preview is silently skipped — recording still works, you just see the "Transcribing…" spinner without the preview. See [`listenLive` in `src/lib/speech.ts`](src/lib/speech.ts).
 
+## Security & abuse considerations
+
+This is a class project, not a production system, and the security posture reflects that. Here's the honest accounting of what's in place vs. what was deliberately out of scope.
+
+**In place:**
+
+- **Schema-bound output via `tool_use`.** The extractor's response *must* be a call to the `submit_extraction` tool with the JSON schema we defined. A transcript that tries to break out into freeform prose ("respond as a pirate") can't — the schema is a containment hatch.
+- **Prompt-injection guards** in both `EXTRACTOR_SYSTEM` and `COACH_SYSTEM` (see [`src/lib/prompts.ts`](src/lib/prompts.ts)). They explicitly instruct the model to treat the transcript, follow-up dialogue, AND retrieved past memos as *data* — not instructions — and to never echo the system prompt or its rules even when asked. The coach prompt calls out past memos specifically: if last week's memo contains an injected directive, today's coach must still ignore it.
+- **Anti-fabrication rule.** "NEVER invent facts" biases the extractor toward null/empty fields on weird input rather than confabulating.
+- **Firestore security rules** ([`firestore.rules`](firestore.rules)) enforce `request.auth.uid == uid` on every read/write — User A cannot read User B's memos even with crafted direct requests.
+- **5-minute hard recording cap** limits the cost of a forgotten or runaway recording.
+- **Anthropic and OpenAI model-level safety training** catches the worst harmful requests before our prompts even apply.
+
+**Deliberately out of scope for a class project (and why):**
+
+- **Per-user rate limiting on `/api/*`.** A signed-in attacker could spam the LLM routes and burn API credit. For one grader testing one demo, this isn't a real threat; for production, we'd add Firebase App Check + a per-user request budget.
+- **Server-side auth checks on the route handlers.** Data isolation lives in Firestore rules (which DO verify UID), but the LLM routes themselves don't require auth. A signed-out client could call `/api/extract` directly with crafted JSON and get a response back — just no persistence path, since saving requires a Firebase Auth session. Cost-of-abuse is bounded.
+- **Content moderation pre-filter on input.** Off-topic or low-quality transcripts just produce sparse extractions; we don't reject them before they reach Claude. Model-level safety handles the worst inputs.
+- **Audit logging.** No per-request log of which user called what.
+
+This list is the queue for production-hardening if the project ever left class-demo scope.
+
 ## Recording limits
 
 A single recording auto-stops at **5 minutes** and submits whatever's been captured so far — same code path as clicking stop manually, so no data is lost. The timer in [`Recorder.tsx`](src/components/Recorder.tsx) shows `MM:SS / 5:00 max` and turns amber starting at 80% of the cap so you have time to wrap up.
