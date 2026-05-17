@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { getOpenAI, MODELS } from "@/lib/clients";
+import { LIMITS } from "@/lib/limits";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,6 +19,12 @@ export async function POST(req: NextRequest) {
     const { text, voice } = (await req.json()) as Body;
     if (!text || typeof text !== "string" || !text.trim()) {
       return Response.json({ error: "Missing text." }, { status: 400 });
+    }
+    if (text.length > LIMITS.speakChars) {
+      return Response.json(
+        { error: `Text exceeds ${LIMITS.speakChars} character limit.` },
+        { status: 413 },
+      );
     }
 
     const selectedVoice: OpenAIVoice = voice && VOICES.has(voice) ? (voice as OpenAIVoice) : "nova";
