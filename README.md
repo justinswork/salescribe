@@ -19,13 +19,18 @@ audio blob ─▶ /api/transcribe (Whisper)
               │
               └─▶ transcript ─▶ /api/extract (Claude Sonnet 4.6 + tool_use)
                                 │
-                                ├─▶ retrieve past memos for same company (localStorage)
+                                ├─▶ retrieve past memos for same company (Firestore)
                                 │
                                 └─▶ extraction + related memos ─▶ /api/followup (Claude + tool_use)
                                                                   │
                                                                   ├─▶ question_type="gap"  ▶ asks about checklist item
                                                                   ├─▶ question_type="history" ▶ asks about a past-memo fact
-                                                                  └─▶ done=true ▶ persist memo to localStorage
+                                                                  └─▶ done=true ▶ persist memo to Firestore
+
+Separate cross-document path:
+"Brief me on Northwind" ─▶ all past memos for that company ─▶ /api/brief (Claude + tool_use)
+                                                              │
+                                                              └─▶ deal_status_summary + arc + open_items + risks + ...
 ```
 
 Two separate system prompts power the app:
@@ -34,6 +39,31 @@ Two separate system prompts power the app:
 - **`COACH_SYSTEM`** — warm and conversational. Grounded against a *completeness checklist* (WHO / WHAT / WHY NOW / BUDGET / DECISION / COMPETITION / OBJECTIONS / NEXT STEP / TIMELINE) and, when available, *related past memos* retrieved from local memory. Each turn the coach acts as a small agent: it picks `question_type=gap` (fill a checklist item) or `question_type=history` (reference a past-memo fact that may have evolved), and reports its choice.
 
 Both live in [`src/lib/prompts.ts`](src/lib/prompts.ts).
+
+## Pre-meeting briefings (Project 2)
+
+The headline cross-document feature. A salesperson with a meeting coming up taps "Brief me on Northwind" — the app pulls every past memo about that prospect (could be 10+ for a major account), passes them all to Claude in one request, and gets back a structured briefing rendered by [`BriefView`](src/components/BriefView.tsx):
+
+- **Where the deal stands** — narrative summary across the full memo history
+- **Deal arc** — chronological timeline of moments that mattered (first contact, key stakeholder added, objection raised, commitment made, status change), with dates
+- **Outstanding next steps** — concrete commitments from past memos that haven't been kept, each tagged with who owes the action (you / them / unclear)
+- **Talking points** — things worth bringing up in the next meeting
+- **Open questions** — concrete things to clarify
+- **Risks** — long silences, contradictions across memos, competitor gains, budget shrinkage, with low/medium/high level
+
+The implementation in [`/api/brief`](src/app/api/brief/route.ts) does one Claude call with the full multi-memo payload, wrapped in `<<<PAST_MEMOS_START>>>...<<<PAST_MEMOS_END>>>` spotlighting delimiters. The [`BRIEFER_SYSTEM`](src/lib/prompts.ts) prompt explicitly orchestrates multi-step reasoning: "read all the memos chronologically → trace the deal arc → inventory open items → identify talking points → flag risks → then call submit_brief." That structured reasoning inside one prompt is the project's "multi-turn planning" mechanic — the planning happens in the model's reasoning chain rather than across multiple API round-trips.
+
+Briefings are computed on demand (no caching) so a fresh brief reflects whatever memos exist right now. Listed on the idle screen for any prospect with 2+ memos, sorted by memo count.
+
+**Why this is a step up from the rest of the app.** The extractor and coach each operate on a single document. The briefer reads many — potentially 50K+ tokens of accumulated context — and has to recover one coherent narrative from messy spoken inputs that don't reference each other. That's a different shape of LLM problem and a real test of cross-document synthesis.
+
+## Demo data
+
+To make the briefing feature demoable without dictating 30 memos yourself, the project ships a synthetic dataset of **88 fictional voice memos spanning a year**, about a fictional salesperson (Jordan Reeves) at a fictional fleet-dispatch SaaS (Cargolink). Customers include 10 one-off prospects, 9 mid-touch deals (mix of closed-won, closed-lost, and stalled), and 4 major accounts with 8-12 memos each — Northwind Logistics, Continental Freight, Atlas Hauling Group, and Summit Distribution. Recurring competitors (FleetIO, Samsara, Routific), cross-account references, and varied deal outcomes give the briefing feature real cross-document material to chew on.
+
+**How to use it:** sign in, click your avatar in the top right, click **Load demo data**. The 88 memos appear in your Recent Memos list, flagged with a small amber "DEMO" pill so they're distinguishable from anything you recorded yourself. "Clear demo data" reverses it cleanly.
+
+**How it was made:** the roster lives in [`scripts/test-roster.mjs`](scripts/test-roster.mjs) — hand-defined customer + memo-plan structure. [`scripts/generate-test-data.mjs`](scripts/generate-test-data.mjs) walks the roster, asks Claude to write each memo with continuity from prior beats in the same arc, runs it through `/api/extract` to produce a structured extraction matching the live app, stamps a backdated `created_iso`, and writes everything to `public/demo-data.json`. ~$3 of Anthropic credit per full run; the resulting JSON ships as a static asset so the load-button experience is free at runtime.
 
 ## Hands-free mode
 
@@ -103,6 +133,8 @@ This isn't a model constraint — Whisper's actual file-size ceiling is ~100 min
 | **Retrieval-augmented generation (RAG)** | After each extraction, [`src/lib/storage.ts`](src/lib/storage.ts) retrieves past memos that share a company hint with the current memo and passes them as context to the coach. The retrieval is intentionally simple (substring match on company name) rather than vector-based — debuggable, no embedding store needed. |
 | **LLM memory** | Per-user memo persistence in **Firestore** at `users/{uid}/memos/{memoId}`, scoped by signed-in identity. Security rules ([`firestore.rules`](firestore.rules)) enforce that each user can only read/write their own subtree. A "Recent memos" sidebar lets a user revisit any prior memo, and the coach has access to them as retrieved context. |
 | **Agents** | The coach is an agent in the lightweight sense: each turn it observes (transcript + extraction + chat + retrieved memos), chooses an action type (`gap` / `history` / `none`), and acts. The chosen action type surfaces in the UI as a subtle "↻ referencing a past memo" label when applicable. |
+| **Longer context / cross-document reasoning** | The pre-meeting briefing feature reads every past memo for a prospect in one prompt — up to 50 memos, potentially 50K+ tokens of accumulated context. The [`BRIEFER_SYSTEM`](src/lib/prompts.ts) prompt asks Claude to trace a coherent deal arc across messy unrelated dictations, then call `submit_brief` with structured output. This is the project's Project-2 capability: the model has to do more than extract from one doc. |
+| **Multi-turn planning** | Two places. (1) The briefer's system prompt explicitly orchestrates sequential reasoning *within* one model call: read → trace arc → inventory open items → identify talking points → flag risks → call the tool. (2) The coach's turn-by-turn `gap` vs `history` action choice across a conversation, with a 3-question cap. |
 | **Multi-model use** | OpenAI Whisper (transcription) + Anthropic Claude Sonnet 4.6 (extraction, coaching, sample-memo generation). Two vendors, distinct strengths. Browser-native speech APIs also layered on top for the hands-free experience. |
 | **Tool / MCP use** | Anthropic `tool_use` with forced `tool_choice` for both extraction (`submit_extraction`) and coaching (`submit_followup`). Treats the JSON schema as a contract instead of hoping freeform JSON parses. |
 | **Evaluation** | 5-case eval harness in [`evals/`](evals/) with per-check assertions that probe specific behaviors (date math, anti-fabrication, self-correction, no-deal-no-deal-fields). |
@@ -161,7 +193,7 @@ Set `SALESCRIBE_URL=https://your-backend.web.app` to eval the deployed version i
 
 ### What the eval set probes
 
-The current suite is **12 cases / 43 checks**, split between extraction tests (hit `/api/extract`) and coach tests (hit `/api/followup`). It runs against the live API — these are not unit tests over mocks.
+The current suite is **15 cases**, split across three endpoints (`/api/extract`, `/api/followup`, `/api/brief`). It runs against the live API — these are not unit tests over mocks.
 
 **Extraction (cases 01–09):**
 
@@ -185,7 +217,13 @@ The current suite is **12 cases / 43 checks**, split between extraction tests (h
 | `11-coach-picks-history-when-stale-fact` | With a relevant past memo containing budget/competitor info absent from today's memo, coach picks `question_type=history` and references a past-memo fact |
 | `12-coach-stops-at-question-cap` | After 3 prior assistant turns, coach must declare `done=true`, empty question, `question_type=none` |
 
-**Current result: 43/43 passing against Claude Sonnet 4.6 + Whisper.**
+**Briefing (cases 13–15) — tests the cross-document briefing engine:**
+
+| Case | What it stresses |
+|------|------------------|
+| `13-brief-arc-reconstruction-closed-won` | Given 3 memos walking a deal from discovery to close, the brief must reflect the close in the summary, produce a chronologically-ordered multi-entry `deal_arc`, and not invent competitors |
+| `14-brief-flags-outstanding-salesperson-debt` | Given memos where the salesperson promises SOC2 docs but doesn't deliver, the brief's `outstanding_next_steps` must include the unfulfilled promise tagged with `owner=salesperson`, and `risks` or the summary must acknowledge the missed commitment |
+| `15-brief-no-fabrication-on-single-memo` | Anti-hallucination: given one sparse intro-call memo, the brief must not fabricate arc entries, competitors, or dollar amounts |
 
 ## Build log
 
@@ -270,7 +308,8 @@ src/
 │   │   ├── extract/route.ts      # Claude extractor + tool_use
 │   │   ├── followup/route.ts     # Claude coach + tool_use + RAG injection
 │   │   ├── sample/route.ts       # Claude generator for fresh sample memos
-│   │   └── speak/route.ts        # OpenAI tts-1 narration for hands-free mode
+│   │   ├── speak/route.ts        # OpenAI tts-1 narration for hands-free mode
+│   │   └── brief/route.ts        # Claude cross-memo briefing (Project 2)
 │   ├── layout.tsx                # wraps tree in AuthProvider
 │   └── page.tsx                  # AuthGuard → SalescribeApp (state machine)
 ├── components/
@@ -282,7 +321,8 @@ src/
 │   ├── SignInScreen.tsx          # Google-only sign-in landing
 │   ├── AccountMenu.tsx           # header avatar + sign-out
 │   ├── ThemeToggle.tsx           # system/light/dark cycle button
-│   └── HandsFreeToggle.tsx       # hands-free mode toggle
+│   ├── HandsFreeToggle.tsx       # hands-free mode toggle
+│   └── BriefView.tsx             # renders a structured pre-meeting briefing
 └── lib/
     ├── clients.ts                # Anthropic/OpenAI SDK lazy singletons + model IDs
     ├── prompts.ts                # all system prompts (extractor, coach, sample generator)
@@ -295,6 +335,9 @@ src/
     └── HandsFreeContext.tsx      # hands-free toggle + browser support detection
 firestore.rules                   # per-user read/write isolation
 apphosting.yaml                   # App Hosting backend config (secrets, runtime)
+scripts/
+├── test-roster.mjs               # fictional customer + memo plan
+└── generate-test-data.mjs        # generator: roster → demo-data.json
 evals/
 ├── cases.mjs                     # eval set
 └── run.mjs                       # eval runner
