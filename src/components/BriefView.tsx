@@ -81,7 +81,7 @@ export default function BriefView({
   return (
     <div className="flex flex-col gap-3">
       <div className="text-xs text-zinc-500 dark:text-zinc-400 uppercase tracking-wide">
-        Briefing · {memoCount} past memo{memoCount === 1 ? "" : "s"}
+        Meeting prep · synthesized from {memoCount} past memo{memoCount === 1 ? "" : "s"}
       </div>
       <h2 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
         {company}

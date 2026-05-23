@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import type { Memo } from "@/lib/schema";
 
 type Props = {
@@ -7,6 +8,8 @@ type Props = {
   onOpen: (memo: Memo) => void;
   onDelete: (id: string) => void;
 };
+
+const VISIBLE_LIMIT = 8;
 
 function formatDate(iso: string): string {
   const d = new Date(iso);
@@ -23,16 +26,28 @@ function memoLabel(m: Memo): string {
 export default function MemoHistory({ memos, onOpen, onDelete }: Props) {
   if (memos.length === 0) return null;
 
+  const hasMore = memos.length > VISIBLE_LIMIT;
+
   return (
     <section className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-4">
-      <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-3">
-        Recent memos
-        <span className="ml-2 rounded-full bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 text-xs font-normal text-zinc-700 dark:text-zinc-300">
-          {memos.length}
-        </span>
-      </h2>
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+          Recent memos
+          <span className="ml-2 rounded-full bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 text-xs font-normal text-zinc-700 dark:text-zinc-300">
+            {memos.length}
+          </span>
+        </h2>
+        {hasMore && (
+          <Link
+            href="/memos"
+            className="text-xs text-zinc-500 dark:text-zinc-400 underline hover:text-zinc-700 dark:hover:text-zinc-200"
+          >
+            View all {memos.length} →
+          </Link>
+        )}
+      </div>
       <ul className="flex flex-col gap-2">
-        {memos.slice(0, 8).map((m) => (
+        {memos.slice(0, VISIBLE_LIMIT).map((m) => (
           <li
             key={m.id}
             className="flex items-start justify-between gap-3 rounded border border-zinc-200 dark:border-zinc-800 p-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-900"
