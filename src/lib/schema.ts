@@ -164,6 +164,111 @@ export type ChatMessage = {
   content: string;
 };
 
+// -------------------------------------------------------------------------
+// Pre-meeting briefing schema (used by /api/brief).
+//
+// The briefer reads multiple past memos for the same prospect and produces a
+// structured Brief: state of the deal, key moments in the arc, open items,
+// talking points, outstanding commitments by owner, and risk flags. Schema-
+// bound output via Anthropic tool_use, same containment-by-schema pattern
+// the extractor and coach use.
+// -------------------------------------------------------------------------
+
+export const briefToolSchema = {
+  name: "submit_brief",
+  description:
+    "Submit the structured pre-meeting briefing for a prospect, synthesized across all the past memos provided. Call this exactly once.",
+  input_schema: {
+    type: "object" as "object",
+    properties: {
+      deal_status_summary: {
+        type: "string",
+        description:
+          "1-2 paragraph narrative of where the deal currently stands. Past tense for what happened; present tense for current state. No projections.",
+      },
+      deal_arc: {
+        type: "array",
+        description:
+          "Key moments in chronological order. Skip routine check-ins — only the moments that mattered (first contact, key stakeholder added, objection raised, commitment made, status change).",
+        items: {
+          type: "object",
+          properties: {
+            date_iso: { type: "string", description: "ISO 8601 date of the memo this moment came from." },
+            event: { type: "string", description: "One sentence describing what happened or changed." },
+          },
+          required: ["date_iso", "event"],
+        },
+      },
+      open_questions: {
+        type: "array",
+        items: { type: "string" },
+        description:
+          "Things the salesperson should clarify or ask in the upcoming meeting. Concrete, answerable. Skip if nothing genuinely open.",
+      },
+      talking_points: {
+        type: "array",
+        items: { type: "string" },
+        description:
+          "Things worth bringing up — unresolved objections to address, competitor positioning, value props that resonated, decision-maker dynamics to reinforce.",
+      },
+      outstanding_next_steps: {
+        type: "array",
+        description:
+          "Concrete commitments made in past memos that haven't visibly been completed (no later memo confirms them done). Tag who owns each.",
+        items: {
+          type: "object",
+          properties: {
+            owner: {
+              type: "string",
+              enum: ["salesperson", "prospect", "unclear"],
+            },
+            action: { type: "string" },
+            due_iso: { type: ["string", "null"] },
+          },
+          required: ["owner", "action", "due_iso"],
+        },
+      },
+      risks: {
+        type: "array",
+        description:
+          "Signals worth flagging — long silences, competitor gains, budget shrinkage, contradictions across memos, decision-maker uncertainty, deals that look stuck.",
+        items: {
+          type: "object",
+          properties: {
+            level: { type: "string", enum: ["low", "medium", "high"] },
+            description: { type: "string" },
+          },
+          required: ["level", "description"],
+        },
+      },
+    },
+    required: [
+      "deal_status_summary",
+      "deal_arc",
+      "open_questions",
+      "talking_points",
+      "outstanding_next_steps",
+      "risks",
+    ],
+  },
+};
+
+export type Brief = {
+  deal_status_summary: string;
+  deal_arc: Array<{ date_iso: string; event: string }>;
+  open_questions: string[];
+  talking_points: string[];
+  outstanding_next_steps: Array<{
+    owner: "salesperson" | "prospect" | "unclear";
+    action: string;
+    due_iso: string | null;
+  }>;
+  risks: Array<{
+    level: "low" | "medium" | "high";
+    description: string;
+  }>;
+};
+
 export type Memo = {
   id: string;
   created_iso: string;
