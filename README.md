@@ -4,11 +4,23 @@
 
 A traveling B2B salesperson dictates a memo between meetings. Salescribe transcribes it, extracts calendar events / reminders / contacts / deal context, then asks one short follow-up question to fill the most important missing piece — like a sales coach riding shotgun.
 
-> Submitted for: Generative AI class, Weeks 1–2 (theme: prompting & grounding).
+> Submitted for: Generative AI class, **Project 2** (theme: longer context / cross-document reasoning / multi-turn planning). Builds on the Weeks 1–2 work (prompting + grounding) with a new pre-meeting briefing feature that reasons across many memos at once.
 
 ## Live demo
 
 **Deployed at: <https://salescribe--salescribe-2532a.us-east4.hosted.app>**
+
+### 👉 For graders: how to actually see the features
+
+The interesting capabilities only show up once there are memos in the account. To avoid asking you to dictate 30 voice memos yourself:
+
+1. Open the URL above and **sign in with Google**.
+2. Click your **avatar in the top-right** → **Load demo data**. ~3-5 seconds later, the page reloads with **88 fictional sales memos** spanning a year of activity across 24 customers (including 4 major accounts with 8–12 memos each).
+3. On the home page, click the **Meeting prep** tab → pick a prospect like **Northwind Logistics** → **prep me →**. You'll get a structured pre-meeting briefing synthesized across all 12 of Northwind's memos: deal arc, outstanding next steps tagged by owner, talking points, open questions, risks. This is the Project 2 headline feature.
+4. Try the **Memos** tab → **View all 88 →** to see the full list with search and date-range filters.
+5. Try recording a fresh memo yourself (red button) → the coach will ask follow-up questions; if you load demo data first, watch for the **↻ referencing a past memo** label on a coach question — that's the RAG layer activating.
+
+Demo memos are flagged with an amber **DEMO** pill so they're obvious. **Clear demo data** in the same menu removes them cleanly when you're done.
 
 Verified end-to-end against production: 43/43 eval checks pass (`SALESCRIBE_URL=https://salescribe--salescribe-2532a.us-east4.hosted.app npm run eval`).
 
