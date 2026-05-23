@@ -9,11 +9,20 @@ import AuthGuard from "@/components/AuthGuard";
 import AccountMenu from "@/components/AccountMenu";
 import ThemeToggle from "@/components/ThemeToggle";
 import HandsFreeToggle from "@/components/HandsFreeToggle";
+import BriefView from "@/components/BriefView";
 import { useAuth } from "@/lib/AuthContext";
 import { useHandsFree } from "@/lib/HandsFreeContext";
 import { cancelSpeech, listenForReply, speak, type ListenHandle } from "@/lib/speech";
-import type { ChatMessage, Extraction, FollowupResult, Memo } from "@/lib/schema";
-import { loadMemos, saveMemo, deleteMemo, newMemoId, findRelatedMemos } from "@/lib/storage";
+import type { Brief, ChatMessage, Extraction, FollowupResult, Memo } from "@/lib/schema";
+import {
+  loadMemos,
+  saveMemo,
+  deleteMemo,
+  newMemoId,
+  findRelatedMemos,
+  findMemosByCompany,
+  getCompanyOptions,
+} from "@/lib/storage";
 
 type Status = "idle" | "transcribing" | "extracting" | "coaching" | "ready_for_reply" | "done" | "error";
 
@@ -48,6 +57,16 @@ function SalescribeApp() {
   const [currentMemoId, setCurrentMemoId] = useState<string>("");
   const [viewingMemo, setViewingMemo] = useState<Memo | null>(null);
   const [sampleLoading, setSampleLoading] = useState(false);
+
+  // Briefing state: when briefingCompany is non-empty, the main content area
+  // renders the BriefView (or its loading/error state) instead of the normal
+  // recording UI. A null currentBrief alongside a non-empty briefingCompany
+  // means we're still waiting on /api/brief to return.
+  const [briefingCompany, setBriefingCompany] = useState<string>("");
+  const [briefingMemoCount, setBriefingMemoCount] = useState(0);
+  const [currentBrief, setCurrentBrief] = useState<Brief | null>(null);
+  const [briefLoading, setBriefLoading] = useState(false);
+  const [briefError, setBriefError] = useState("");
 
   // Live transcript from the browser's SpeechRecognition during memo recording.
   // This is just a UX preview — the authoritative transcript still comes from
@@ -323,6 +342,54 @@ function SalescribeApp() {
     await processTranscript(textInput.trim());
   }
 
+  // Pull all memos for `company` from the loaded list, POST them to /api/brief,
+  // render the Brief in BriefView. Errors fall through to the error state for
+  // the same view rather than dumping the user back to the home screen.
+  async function openBriefing(company: string) {
+    const matching = findMemosByCompany(company, pastMemos);
+    if (matching.length === 0) {
+      setBriefError(`No memos found for "${company}".`);
+      setBriefingCompany(company);
+      setBriefingMemoCount(0);
+      setCurrentBrief(null);
+      return;
+    }
+    setBriefingCompany(company);
+    setBriefingMemoCount(matching.length);
+    setCurrentBrief(null);
+    setBriefError("");
+    setBriefLoading(true);
+    try {
+      const r = await fetch("/api/brief", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ company, memos: matching }),
+      });
+      if (!r.ok) {
+        let detail = "";
+        try {
+          const body = await r.json();
+          detail = body.error ? `: ${body.error}` : "";
+        } catch {}
+        throw new Error(`Briefing failed (${r.status})${detail}`);
+      }
+      const data = (await r.json()) as { brief: Brief };
+      setCurrentBrief(data.brief);
+    } catch (e) {
+      setBriefError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBriefLoading(false);
+    }
+  }
+
+  function closeBriefing() {
+    setBriefingCompany("");
+    setCurrentBrief(null);
+    setBriefError("");
+    setBriefLoading(false);
+    setBriefingMemoCount(0);
+  }
+
   // Fetch a fresh AI-generated sample memo, falling back to the hardcoded
   // SAMPLE constant if the route fails (rate limits, network, etc.) so the
   // button always does something even when the generator is down.
@@ -484,6 +551,70 @@ function SalescribeApp() {
       </div>
     </section>
   );
+
+  // Pre-meeting briefing view. Same shell as the memo-view branch — header
+  // with a "back" handler in the logo and an account menu on the right; main
+  // body either renders BriefView, a loading state, or an error.
+  if (briefingCompany) {
+    return (
+      <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
+        <header className="border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950">
+          <div className="mx-auto max-w-3xl px-6 py-5 flex items-center justify-between">
+            <button
+              type="button"
+              onClick={closeBriefing}
+              className="inline-flex items-baseline rounded text-left hover:opacity-80"
+              aria-label="Go to home"
+            >
+              <span className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+                Salescribe
+              </span>
+              <span
+                className="ml-3 align-middle text-xs font-mono font-normal text-zinc-400 dark:text-zinc-500"
+                title={`commit ${process.env.NEXT_PUBLIC_GIT_SHA}`}
+              >
+                v{process.env.NEXT_PUBLIC_APP_VERSION}
+              </span>
+            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={closeBriefing}
+                className="text-sm text-zinc-500 dark:text-zinc-400 underline mr-2"
+              >
+                ← Back
+              </button>
+              <HandsFreeToggle />
+              <ThemeToggle />
+              <AccountMenu />
+            </div>
+          </div>
+        </header>
+        <main className="mx-auto max-w-3xl px-6 py-8 flex flex-col gap-6">
+          {briefLoading && (
+            <div className="flex items-center gap-3 text-sm text-zinc-600 dark:text-zinc-400">
+              <span className="inline-block h-3 w-3 rounded-full bg-zinc-400 animate-pulse" />
+              <span>
+                Reading {briefingMemoCount} memo{briefingMemoCount === 1 ? "" : "s"} about {briefingCompany}…
+              </span>
+            </div>
+          )}
+          {briefError && (
+            <div className="rounded border border-red-300 bg-red-50 dark:bg-red-950/30 dark:border-red-900 p-3 text-sm text-red-800 dark:text-red-200">
+              {briefError}
+            </div>
+          )}
+          {currentBrief && (
+            <BriefView
+              company={briefingCompany}
+              memoCount={briefingMemoCount}
+              brief={currentBrief}
+            />
+          )}
+        </main>
+      </div>
+    );
+  }
 
   // Read-only view of a saved memo.
   if (viewingMemo) {
@@ -669,6 +800,46 @@ function SalescribeApp() {
                 </div>
               )}
             </section>
+
+            {(() => {
+              // Briefings panel: lists companies with 2+ memos (anything less
+              // wouldn't really be a "briefing", just a re-read of one memo).
+              // Click a company → openBriefing(company) navigates into the
+              // brief view, which calls /api/brief and renders BriefView.
+              const options = getCompanyOptions(pastMemos).filter((o) => o.memoCount >= 2);
+              if (options.length === 0) return null;
+              return (
+                <section className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-4">
+                  <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">
+                    Pre-meeting briefings
+                    <span className="ml-2 rounded-full bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 text-xs font-normal text-zinc-700 dark:text-zinc-300">
+                      {options.length}
+                    </span>
+                  </h2>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-3">
+                    Synthesize the deal arc, open items, talking points, and risks across every past memo for a prospect.
+                  </p>
+                  <ul className="flex flex-col gap-1.5">
+                    {options.slice(0, 10).map((o) => (
+                      <li key={o.company}>
+                        <button
+                          type="button"
+                          onClick={() => openBriefing(o.company)}
+                          className="w-full flex items-center justify-between gap-3 rounded border border-zinc-200 dark:border-zinc-800 p-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-900"
+                        >
+                          <span className="font-medium text-zinc-900 dark:text-zinc-100 truncate">
+                            {o.company}
+                          </span>
+                          <span className="text-xs text-zinc-500 dark:text-zinc-400 shrink-0">
+                            {o.memoCount} memos · brief me →
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              );
+            })()}
 
             <MemoHistory memos={pastMemos} onOpen={openMemo} onDelete={handleDelete} />
           </>
