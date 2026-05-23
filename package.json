@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "eval": "node evals/run.mjs"
+    "eval": "node evals/run.mjs",
+    "gen:demo": "node scripts/generate-test-data.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.96.0",
