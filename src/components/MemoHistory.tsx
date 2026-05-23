@@ -42,8 +42,13 @@ export default function MemoHistory({ memos, onOpen, onDelete }: Props) {
               onClick={() => onOpen(m)}
               className="text-left flex-1 min-w-0"
             >
-              <div className="font-medium text-zinc-900 dark:text-zinc-100 truncate">
-                {memoLabel(m)}
+              <div className="font-medium text-zinc-900 dark:text-zinc-100 truncate flex items-center gap-2">
+                <span className="truncate">{memoLabel(m)}</span>
+                {m.is_demo && (
+                  <span className="shrink-0 rounded-full bg-amber-100 dark:bg-amber-950/40 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800 dark:text-amber-300 uppercase tracking-wide">
+                    demo
+                  </span>
+                )}
               </div>
               <div className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5 line-clamp-1">
                 {m.extraction.summary}

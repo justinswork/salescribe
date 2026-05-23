@@ -170,4 +170,7 @@ export type Memo = {
   transcript: string;
   extraction: Extraction;
   chat: ChatMessage[];
+  // Flag set by the demo-data loader so a "Clear demo data" action can find
+  // every fictional memo and delete just those, leaving real ones alone.
+  is_demo?: boolean;
 };

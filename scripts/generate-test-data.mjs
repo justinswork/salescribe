@@ -40,7 +40,23 @@ const REFERENCE_NOW = new Date(process.env.REFERENCE_NOW ?? Date.now());
 const SALESCRIBE_URL = process.env.SALESCRIBE_URL ?? "http://localhost:3000";
 const MODEL = "claude-sonnet-4-6";
 const MAX_PRIOR_BEATS_IN_CONTEXT = 4;
-const OUTPUT_PATH = path.join(PROJECT_ROOT, "public", "demo-data.json");
+
+// Optional `--limit N` arg processes only the first N memos across the roster
+// (in customer order, then beat order). Useful for cheap test runs to verify
+// the script works before paying for the full ~88-memo generation.
+// `--limit N` ALSO writes to a separate file (public/demo-data-sample.json)
+// so a test run doesn't clobber a previously-generated full dataset.
+const argLimitIdx = process.argv.findIndex((a) => a === "--limit");
+const LIMIT = argLimitIdx >= 0 ? Number(process.argv[argLimitIdx + 1]) : Infinity;
+if (argLimitIdx >= 0 && (!Number.isFinite(LIMIT) || LIMIT < 1)) {
+  console.error("--limit must be followed by a positive integer.");
+  process.exit(1);
+}
+const OUTPUT_PATH = path.join(
+  PROJECT_ROOT,
+  "public",
+  Number.isFinite(LIMIT) ? "demo-data-sample.json" : "demo-data.json",
+);
 
 // ---------------------------------------------------------------------------
 // API key — read from env first, fall back to .env.local so the script works
@@ -190,23 +206,25 @@ async function main() {
   }
 
   const stats = rosterStats();
+  const target = Math.min(LIMIT, stats.total);
   console.log(
-    `Generating ${stats.total} memos across ${stats.customers} customers.\nReference now: ${REFERENCE_NOW.toISOString()}\nExtract endpoint: ${SALESCRIBE_URL}/api/extract\n`,
+    `Generating ${target}${target < stats.total ? ` of ${stats.total}` : ""} memos across the roster.\nReference now: ${REFERENCE_NOW.toISOString()}\nExtract endpoint: ${SALESCRIBE_URL}/api/extract\nOutput: ${path.relative(PROJECT_ROOT, OUTPUT_PATH)}\n`,
   );
 
   const memos = [];
   let n = 0;
   const startTime = Date.now();
 
-  for (const customer of CUSTOMERS) {
+  outer: for (const customer of CUSTOMERS) {
     const priorBeats = [];
     for (let i = 0; i < customer.beats.length; i++) {
+      if (n >= LIMIT) break outer;
       const beat = customer.beats[i];
       n++;
       const reference_now_iso = backdate(beat.weeks_ago);
 
       process.stdout.write(
-        `[${String(n).padStart(2, "0")}/${stats.total}] ${customer.company} — beat ${i + 1}/${customer.beats.length} (${beat.weeks_ago}w ago)... `,
+        `[${String(n).padStart(2, "0")}/${target}] ${customer.company} — beat ${i + 1}/${customer.beats.length} (${beat.weeks_ago}w ago)... `,
       );
 
       let transcript, extraction;

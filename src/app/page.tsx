@@ -514,8 +514,13 @@ function SalescribeApp() {
           </div>
         </header>
         <main className="mx-auto max-w-3xl px-6 py-8 flex flex-col gap-6">
-          <div className="text-sm text-zinc-500 dark:text-zinc-400">
-            Recorded {new Date(viewingMemo.created_iso).toLocaleString()}
+          <div className="text-sm text-zinc-500 dark:text-zinc-400 flex items-center gap-2">
+            <span>Recorded {new Date(viewingMemo.created_iso).toLocaleString()}</span>
+            {viewingMemo.is_demo && (
+              <span className="rounded-full bg-amber-100 dark:bg-amber-950/40 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800 dark:text-amber-300 uppercase tracking-wide">
+                demo
+              </span>
+            )}
           </div>
           <section className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-4">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-2">

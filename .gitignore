@@ -42,6 +42,11 @@ yarn-error.log*
 firebase-debug.log
 .runtimeconfig.json
 
+# Demo-data test runs (--limit). The real public/demo-data.json IS committed
+# so the deployed "Load demo data" button works; the sample is a local-only
+# scratch file.
+/public/demo-data-sample.json
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
