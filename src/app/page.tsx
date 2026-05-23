@@ -10,6 +10,7 @@ import AccountMenu from "@/components/AccountMenu";
 import ThemeToggle from "@/components/ThemeToggle";
 import HandsFreeToggle from "@/components/HandsFreeToggle";
 import BriefView from "@/components/BriefView";
+import MemoDetailView from "@/components/MemoDetailView";
 import { useAuth } from "@/lib/AuthContext";
 import { useHandsFree } from "@/lib/HandsFreeContext";
 import { cancelSpeech, listenForReply, speak, type ListenHandle } from "@/lib/speech";
@@ -62,6 +63,11 @@ function SalescribeApp() {
   // renders the BriefView (or its loading/error state) instead of the normal
   // recording UI. A null currentBrief alongside a non-empty briefingCompany
   // means we're still waiting on /api/brief to return.
+  // Which tab is selected on the idle home page: the recent-memos list or
+  // the pre-meeting briefings picker. Stored locally; doesn't need to persist
+  // across reloads (a refresh always lands on Memos).
+  const [homeTab, setHomeTab] = useState<"memos" | "briefings">("memos");
+
   const [briefingCompany, setBriefingCompany] = useState<string>("");
   const [briefingMemoCount, setBriefingMemoCount] = useState(0);
   const [currentBrief, setCurrentBrief] = useState<Brief | null>(null);
@@ -595,7 +601,7 @@ function SalescribeApp() {
             <div className="flex items-center gap-3 text-sm text-zinc-600 dark:text-zinc-400">
               <span className="inline-block h-3 w-3 rounded-full bg-zinc-400 animate-pulse" />
               <span>
-                Reading {briefingMemoCount} memo{briefingMemoCount === 1 ? "" : "s"} about {briefingCompany}…
+                Prepping for your meeting with {briefingCompany} — reading {briefingMemoCount} past memo{briefingMemoCount === 1 ? "" : "s"}…
               </span>
             </div>
           )}
@@ -645,48 +651,7 @@ function SalescribeApp() {
           </div>
         </header>
         <main className="mx-auto max-w-3xl px-6 py-8 flex flex-col gap-6">
-          <div className="text-sm text-zinc-500 dark:text-zinc-400 flex items-center gap-2">
-            <span>Recorded {new Date(viewingMemo.created_iso).toLocaleString()}</span>
-            {viewingMemo.is_demo && (
-              <span className="rounded-full bg-amber-100 dark:bg-amber-950/40 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800 dark:text-amber-300 uppercase tracking-wide">
-                demo
-              </span>
-            )}
-          </div>
-          <section className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-4">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-2">
-              Transcript
-            </h2>
-            <p className="text-sm whitespace-pre-wrap text-zinc-900 dark:text-zinc-100">
-              {viewingMemo.transcript}
-            </p>
-          </section>
-          <ExtractionView extraction={viewingMemo.extraction} />
-          {viewingMemo.chat.length > 0 && (
-            <section className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-4">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-3">
-                Follow-up
-              </h2>
-              <div className="flex flex-col gap-3">
-                {viewingMemo.chat.map((m, i) => (
-                  <div
-                    key={i}
-                    className={`flex ${m.role === "assistant" ? "justify-start" : "justify-end"}`}
-                  >
-                    <div
-                      className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${
-                        m.role === "assistant"
-                          ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100"
-                          : "bg-blue-600 text-white"
-                      }`}
-                    >
-                      {m.content}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
+          <MemoDetailView memo={viewingMemo} />
         </main>
       </div>
     );
@@ -801,47 +766,86 @@ function SalescribeApp() {
               )}
             </section>
 
-            {(() => {
-              // Briefings panel: lists companies with 2+ memos (anything less
-              // wouldn't really be a "briefing", just a re-read of one memo).
-              // Click a company → openBriefing(company) navigates into the
-              // brief view, which calls /api/brief and renders BriefView.
-              const options = getCompanyOptions(pastMemos).filter((o) => o.memoCount >= 2);
-              if (options.length === 0) return null;
+            {pastMemos.length > 0 && (() => {
+              // Tabbed home: Memos (the full list) vs. Briefings (one row per
+              // company with 2+ memos, click to generate a brief). The two
+              // share vertical real estate instead of stacking — keeps the
+              // page from getting overwhelming once demo data is loaded.
+              const briefingOptions = getCompanyOptions(pastMemos).filter((o) => o.memoCount >= 2);
               return (
-                <section className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-4">
-                  <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">
-                    Pre-meeting briefings
-                    <span className="ml-2 rounded-full bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 text-xs font-normal text-zinc-700 dark:text-zinc-300">
-                      {options.length}
-                    </span>
-                  </h2>
-                  <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-3">
-                    Synthesize the deal arc, open items, talking points, and risks across every past memo for a prospect.
-                  </p>
-                  <ul className="flex flex-col gap-1.5">
-                    {options.slice(0, 10).map((o) => (
-                      <li key={o.company}>
-                        <button
-                          type="button"
-                          onClick={() => openBriefing(o.company)}
-                          className="w-full flex items-center justify-between gap-3 rounded border border-zinc-200 dark:border-zinc-800 p-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-900"
-                        >
-                          <span className="font-medium text-zinc-900 dark:text-zinc-100 truncate">
-                            {o.company}
-                          </span>
-                          <span className="text-xs text-zinc-500 dark:text-zinc-400 shrink-0">
-                            {o.memoCount} memos · brief me →
-                          </span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </section>
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-center gap-1 border-b border-zinc-200 dark:border-zinc-800">
+                    <button
+                      type="button"
+                      onClick={() => setHomeTab("memos")}
+                      className={`px-3 py-2 text-sm border-b-2 -mb-px transition-colors ${
+                        homeTab === "memos"
+                          ? "border-zinc-900 dark:border-zinc-100 text-zinc-900 dark:text-zinc-100 font-medium"
+                          : "border-transparent text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300"
+                      }`}
+                    >
+                      Memos
+                      <span className="ml-2 rounded-full bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 text-xs font-normal">
+                        {pastMemos.length}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setHomeTab("briefings")}
+                      className={`px-3 py-2 text-sm border-b-2 -mb-px transition-colors ${
+                        homeTab === "briefings"
+                          ? "border-zinc-900 dark:border-zinc-100 text-zinc-900 dark:text-zinc-100 font-medium"
+                          : "border-transparent text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300"
+                      }`}
+                    >
+                      Meeting prep
+                      <span className="ml-2 rounded-full bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 text-xs font-normal">
+                        {briefingOptions.length}
+                      </span>
+                    </button>
+                  </div>
+
+                  {homeTab === "memos" && (
+                    <MemoHistory memos={pastMemos} onOpen={openMemo} onDelete={handleDelete} />
+                  )}
+
+                  {homeTab === "briefings" && (
+                    briefingOptions.length === 0 ? (
+                      <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-4 text-sm text-zinc-500 dark:text-zinc-400 italic">
+                        Got a meeting with a prospect coming up? Once you've recorded 2+ memos about the same company, they'll show up here so we can prep you with a quick read across all of them.
+                      </div>
+                    ) : (
+                      <section className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-4">
+                        <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 mb-1">
+                          Got a meeting coming up?
+                        </h3>
+                        <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-3">
+                          Pick the prospect — we&apos;ll read every past memo about them and prep you with the deal arc, open items, talking points, and risks before you walk in.
+                        </p>
+                        <ul className="flex flex-col gap-1.5">
+                          {briefingOptions.slice(0, 15).map((o) => (
+                            <li key={o.company}>
+                              <button
+                                type="button"
+                                onClick={() => openBriefing(o.company)}
+                                className="w-full flex items-center justify-between gap-3 rounded border border-zinc-200 dark:border-zinc-800 p-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-900"
+                              >
+                                <span className="font-medium text-zinc-900 dark:text-zinc-100 truncate">
+                                  {o.company}
+                                </span>
+                                <span className="text-xs text-zinc-500 dark:text-zinc-400 shrink-0">
+                                  {o.memoCount} memos · prep me →
+                                </span>
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      </section>
+                    )
+                  )}
+                </div>
               );
             })()}
-
-            <MemoHistory memos={pastMemos} onOpen={openMemo} onDelete={handleDelete} />
           </>
         )}
 
