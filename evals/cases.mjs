@@ -362,6 +362,257 @@ export const cases = [
       },
     },
   },
+  // -----------------------------
+  // Briefing cases (POST /api/brief). Probe cross-memo arc reconstruction,
+  // identifying who owes outstanding next-steps, risk flagging from temporal
+  // patterns, and anti-fabrication on sparse input.
+  // Each case ships its own small multi-memo arc — self-contained, no
+  // dependency on demo-data.json.
+  // -----------------------------
+  {
+    id: "13-brief-arc-reconstruction-closed-won",
+    type: "brief",
+    company: "Acme Logistics",
+    memos: [
+      {
+        id: "test-acme-1",
+        created_iso: "2026-01-08T10:00:00-04:00",
+        transcript:
+          "Discovery call with Anna at Acme Logistics. They're running 80 trucks with spreadsheet dispatch. Pain is obvious. Mentioned $50-60K range.",
+        extraction: {
+          summary: "Discovery call with Anna at Acme Logistics. 80 trucks, spreadsheet dispatch, $50-60K range.",
+          calendar_events: [],
+          reminders: [],
+          contacts: [{ name: "Anna Chen", role: "VP Ops", company: "Acme Logistics", notes: null }],
+          deal: {
+            company: "Acme Logistics",
+            prospect_name: "Anna Chen",
+            stated_problem: "Spreadsheet dispatch chaos with 80 trucks",
+            budget_signals: "$50-60K range mentioned",
+            decision_makers: "Anna",
+            objections: null,
+            competitors: null,
+            next_step: "Send pricing",
+            next_step_due_iso: null,
+          },
+        },
+        chat: [],
+      },
+      {
+        id: "test-acme-2",
+        created_iso: "2026-02-14T14:00:00-04:00",
+        transcript:
+          "Demo with Anna and her IT lead Sanjay. Went well. They want to talk to a reference customer.",
+        extraction: {
+          summary: "Demo at Acme with Anna and IT lead Sanjay. Strong reception. Reference customer requested next.",
+          calendar_events: [],
+          reminders: [],
+          contacts: [
+            { name: "Anna Chen", role: "VP Ops", company: "Acme Logistics", notes: null },
+            { name: "Sanjay Patel", role: "IT Lead", company: "Acme Logistics", notes: null },
+          ],
+          deal: {
+            company: "Acme Logistics",
+            prospect_name: "Anna Chen",
+            stated_problem: "Spreadsheet dispatch chaos",
+            budget_signals: "$50-60K range",
+            decision_makers: "Anna, Sanjay",
+            objections: null,
+            competitors: null,
+            next_step: "Set up reference customer call",
+            next_step_due_iso: null,
+          },
+        },
+        chat: [],
+      },
+      {
+        id: "test-acme-3",
+        created_iso: "2026-03-20T11:00:00-04:00",
+        transcript:
+          "Closed Acme. Signed at $58K, 2-year contract. Implementation kickoff next month.",
+        extraction: {
+          summary: "Acme Logistics closed-won at $58K on a 2-year contract. Implementation kickoff scheduled.",
+          calendar_events: [],
+          reminders: [],
+          contacts: [
+            { name: "Anna Chen", role: "VP Ops", company: "Acme Logistics", notes: null },
+          ],
+          deal: {
+            company: "Acme Logistics",
+            prospect_name: "Anna Chen",
+            stated_problem: null,
+            budget_signals: "Closed at $58K",
+            decision_makers: "Anna",
+            objections: null,
+            competitors: null,
+            next_step: "Implementation kickoff next month",
+            next_step_due_iso: null,
+          },
+        },
+        chat: [],
+      },
+    ],
+    checks: {
+      "deal_status_summary reflects closed-won": (b) => {
+        const s = b.deal_status_summary.toLowerCase();
+        return /(closed|won|signed|contract|implementation)/.test(s)
+          ? null
+          : `summary doesn't mention close: "${b.deal_status_summary}"`;
+      },
+      "deal_arc has at least 2 entries (multi-memo synthesis)": (b) =>
+        b.deal_arc.length >= 2 ? null : `arc has only ${b.deal_arc.length} entries`,
+      "deal_arc is chronological": (b) => {
+        for (let i = 1; i < b.deal_arc.length; i++) {
+          if (b.deal_arc[i - 1].date_iso > b.deal_arc[i].date_iso) {
+            return `arc out of order at index ${i}`;
+          }
+        }
+        return null;
+      },
+      "no fabricated competitor (none were mentioned)": (b) => {
+        const blob = `${b.deal_status_summary} ${b.talking_points.join(" ")} ${b.risks.map((r) => r.description).join(" ")}`.toLowerCase();
+        return /\b(fleetio|samsara|routific|motive|competitor)\b/.test(blob)
+          ? "fabricated a competitor that wasn't in the memos"
+          : null;
+      },
+    },
+  },
+  {
+    id: "14-brief-flags-outstanding-salesperson-debt",
+    type: "brief",
+    company: "Brillion Carriers",
+    memos: [
+      {
+        id: "test-brillion-1",
+        created_iso: "2026-02-10T10:00:00-04:00",
+        transcript:
+          "Met with Carla at Brillion Carriers. Promised to send over our SOC2 documents and a case study from a similar size customer by end of week.",
+        extraction: {
+          summary: "Met with Carla at Brillion Carriers. Promised to send SOC2 docs and a case study by end of week.",
+          calendar_events: [],
+          reminders: [
+            { text: "Send SOC2 docs and case study to Carla at Brillion", due_iso: null },
+          ],
+          contacts: [{ name: "Carla Reyes", role: "VP IT", company: "Brillion Carriers", notes: null }],
+          deal: {
+            company: "Brillion Carriers",
+            prospect_name: "Carla Reyes",
+            stated_problem: "Looking to modernize their dispatch stack",
+            budget_signals: null,
+            decision_makers: "Carla",
+            objections: null,
+            competitors: null,
+            next_step: "Send SOC2 + case study",
+            next_step_due_iso: null,
+          },
+        },
+        chat: [],
+      },
+      {
+        id: "test-brillion-2",
+        created_iso: "2026-03-05T15:00:00-04:00",
+        transcript:
+          "Quick call with Carla. She asked when the SOC2 docs are coming. I forgot. Apologized, said tomorrow. Need to actually do it.",
+        extraction: {
+          summary: "Carla followed up asking about the promised SOC2 docs and case study. Salesperson hadn't sent them. Apologized, promised tomorrow.",
+          calendar_events: [],
+          reminders: [
+            { text: "Send SOC2 docs and case study to Carla TOMORROW for real this time", due_iso: null },
+          ],
+          contacts: [{ name: "Carla Reyes", role: "VP IT", company: "Brillion Carriers", notes: null }],
+          deal: {
+            company: "Brillion Carriers",
+            prospect_name: "Carla Reyes",
+            stated_problem: null,
+            budget_signals: null,
+            decision_makers: "Carla",
+            objections: null,
+            competitors: null,
+            next_step: "Send SOC2 + case study tomorrow",
+            next_step_due_iso: null,
+          },
+        },
+        chat: [],
+      },
+    ],
+    checks: {
+      "outstanding_next_steps captures the unfulfilled SOC2 promise": (b) => {
+        const all = b.outstanding_next_steps.map((s) => s.action.toLowerCase()).join(" | ");
+        return /(soc2|case study|docs|documents)/.test(all)
+          ? null
+          : `outstanding_next_steps: ${JSON.stringify(b.outstanding_next_steps)}`;
+      },
+      "the SOC2 obligation is tagged as owned by the salesperson": (b) => {
+        const docCommitment = b.outstanding_next_steps.find((s) =>
+          /(soc2|case study|docs|documents)/i.test(s.action),
+        );
+        if (!docCommitment) return "no doc-related outstanding step to check owner on";
+        return docCommitment.owner === "salesperson"
+          ? null
+          : `wrong owner: ${docCommitment.owner} for "${docCommitment.action}"`;
+      },
+      "risks or summary acknowledge the missed commitment": (b) => {
+        const blob = `${b.deal_status_summary} ${b.risks.map((r) => r.description).join(" ")}`.toLowerCase();
+        return /(forgot|missed|delayed|fell through|trust|reliability|overdue|hasn'?t)/.test(blob)
+          ? null
+          : "no acknowledgment of the missed promise in summary or risks";
+      },
+    },
+  },
+  {
+    id: "15-brief-no-fabrication-on-single-memo",
+    type: "brief",
+    company: "Solomatic Industries",
+    memos: [
+      {
+        id: "test-solomatic-1",
+        created_iso: "2026-04-12T09:00:00-04:00",
+        transcript:
+          "Had a 15-minute intro call with Devon at Solomatic. They run a small fleet. Not really sure if there's a fit yet. He said he'd check his calendar for a deeper conversation.",
+        extraction: {
+          summary: "Brief intro call with Devon at Solomatic. Small fleet. Devon to check calendar for a follow-up. Fit uncertain.",
+          calendar_events: [],
+          reminders: [],
+          contacts: [{ name: "Devon Park", role: null, company: "Solomatic Industries", notes: null }],
+          deal: {
+            company: "Solomatic Industries",
+            prospect_name: "Devon Park",
+            stated_problem: null,
+            budget_signals: null,
+            decision_makers: null,
+            objections: null,
+            competitors: null,
+            next_step: "Devon to schedule deeper conversation",
+            next_step_due_iso: null,
+          },
+        },
+        chat: [],
+      },
+    ],
+    checks: {
+      "deal_arc has at most 1 entry": (b) =>
+        b.deal_arc.length <= 1 ? null : `fabricated ${b.deal_arc.length} arc entries from one memo`,
+      "no invented competitors": (b) => {
+        const blob = `${b.deal_status_summary} ${b.talking_points.join(" ")} ${b.risks.map((r) => r.description).join(" ")}`.toLowerCase();
+        return /\b(fleetio|samsara|routific|motive|competitor)\b/.test(blob)
+          ? "fabricated a competitor"
+          : null;
+      },
+      "no invented budget numbers": (b) => {
+        const blob = `${b.deal_status_summary} ${b.talking_points.join(" ")}`;
+        return /\$\d|\d[,\.]\d{3}|\d+k\b/i.test(blob) ? "fabricated a dollar figure" : null;
+      },
+      "outstanding next-step captures Devon's calendar promise as owned by prospect": (b) => {
+        const devonAction = b.outstanding_next_steps.find((s) =>
+          /(calendar|follow.?up|schedule|deeper)/i.test(s.action),
+        );
+        if (!devonAction) return null; // OK if not flagged — minor item
+        return devonAction.owner === "prospect" || devonAction.owner === "unclear"
+          ? null
+          : `wrong owner on Devon's calendar promise: ${devonAction.owner}`;
+      },
+    },
+  },
   {
     id: "12-coach-stops-at-question-cap",
     type: "followup",

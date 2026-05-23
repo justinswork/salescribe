@@ -59,6 +59,20 @@ async function runFollowupCase(c) {
   return data.result;
 }
 
+async function runBriefCase(c) {
+  const r = await fetch(`${URL}/api/brief`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ company: c.company, memos: c.memos }),
+  });
+  if (!r.ok) {
+    const body = await r.text();
+    throw new Error(`HTTP ${r.status}: ${body}`);
+  }
+  const data = await r.json();
+  return data.brief;
+}
+
 let totalChecks = 0;
 let passedChecks = 0;
 const failures = [];
@@ -68,7 +82,12 @@ for (const c of cases) {
 
   let payload;
   try {
-    payload = c.type === "followup" ? await runFollowupCase(c) : await runExtractCase(c);
+    payload =
+      c.type === "followup"
+        ? await runFollowupCase(c)
+        : c.type === "brief"
+          ? await runBriefCase(c)
+          : await runExtractCase(c);
   } catch (e) {
     console.log(`  ${color("red", "REQUEST FAILED")}: ${e.message}`);
     failures.push({ case: c.id, check: "<request>", message: e.message });
