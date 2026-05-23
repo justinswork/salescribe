@@ -19,4 +19,11 @@ export const LIMITS = {
   relatedMemosBytes: 30_000,
   // Text submitted to /api/speak (a single coach question or "Saved.").
   speakChars: 1_000,
+  // Pre-meeting briefing inputs. A major account in this app caps out around
+  // 12 memos in the test roster; 50 is comfortable headroom. The byte cap
+  // covers the compacted-memo JSON payload sent to /api/brief — large enough
+  // for 50 detailed memos with full transcripts, small enough to fail fast
+  // on a crafted oversize payload.
+  briefMemoCount: 50,
+  briefPayloadBytes: 200_000,
 } as const;
