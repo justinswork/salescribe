@@ -87,6 +87,22 @@ export default function AccountMenu() {
 
   return (
     <div className="relative">
+      {demoBusy && (
+        // Full-screen overlay during demo-data writes. The actual operation
+        // takes ~3-5 seconds (one static-asset fetch + one Firestore batch
+        // commit + page reload), but without this the user sees zero feedback
+        // between clicking OK and the page reloading, which feels broken.
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div
+            role="status"
+            aria-live="polite"
+            className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 shadow-lg px-6 py-5 flex items-center gap-3 text-sm text-zinc-900 dark:text-zinc-100"
+          >
+            <span className="inline-block h-3 w-3 rounded-full bg-blue-600 animate-pulse" />
+            <span>Updating your memo collection…</span>
+          </div>
+        </div>
+      )}
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
