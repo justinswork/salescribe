@@ -5,7 +5,7 @@
 A traveling B2B salesperson dictates a memo between meetings. Salescribe transcribes it, extracts calendar events / reminders / contacts / deal context, then asks one short follow-up question to fill the most important missing piece — like a sales coach riding shotgun.
 
 <p align="center">
-  <img src="SalescribeOverview.gif" alt="Salescribe in action: recording a memo, watching it extract structured fields, and getting a follow-up question from the coach" width="720" />
+  <img src="SalescribeOverview.gif" alt="Salescribe in action: recording a memo, watching it extract structured fields, and getting a follow-up question from the coach" width="500" />
 </p>
 
 > Submitted for: Generative AI class, **Project 2** (theme: longer context / cross-document reasoning / multi-turn planning). Builds on the Weeks 1–2 work (prompting + grounding) with a new pre-meeting briefing feature that reasons across many memos at once.
