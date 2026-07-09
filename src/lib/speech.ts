@@ -14,6 +14,8 @@
 // speechSynthesis but not SpeechRecognition. The hands-free toggle is
 // disabled in unsupported browsers — see HandsFreeContext.
 
+import { authedFetch } from "./api";
+
 // ----------------------------------------------------------------------------
 // Minimal type declarations for SpeechRecognition (not in standard lib.dom.d.ts).
 // ----------------------------------------------------------------------------
@@ -77,7 +79,7 @@ export async function speak(
   if (!text.trim()) return;
   cancelSpeech();
   try {
-    const res = await fetch("/api/speak", {
+    const res = await authedFetch("/api/speak", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text, voice: opts?.voice }),

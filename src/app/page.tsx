@@ -14,6 +14,7 @@ import MemoDetailView from "@/components/MemoDetailView";
 import { useAuth } from "@/lib/AuthContext";
 import { useHandsFree } from "@/lib/HandsFreeContext";
 import { cancelSpeech, listenForReply, speak, type ListenHandle } from "@/lib/speech";
+import { authedFetch, apiError } from "@/lib/api";
 import type { Brief, ChatMessage, Extraction, FollowupResult, Memo } from "@/lib/schema";
 import {
   loadMemos,
@@ -217,7 +218,7 @@ function SalescribeApp() {
     setStatus("extracting");
     setCurrentMemoId(newMemoId());
     try {
-      const r = await fetch("/api/extract", {
+      const r = await authedFetch("/api/extract", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -226,7 +227,7 @@ function SalescribeApp() {
           reference_now_iso: new Date().toISOString(),
         }),
       });
-      if (!r.ok) throw new Error(`Extraction failed (${r.status})`);
+      if (!r.ok) throw new Error(await apiError(r, "Extraction failed"));
       const data = (await r.json()) as { extraction: Extraction };
       setExtraction(data.extraction);
       const related = findRelatedMemos(data.extraction, pastMemos);
@@ -241,7 +242,7 @@ function SalescribeApp() {
   async function askFollowup(t: string, ex: Extraction, c: ChatMessage[], related: Memo[]) {
     setStatus("coaching");
     try {
-      const r = await fetch("/api/followup", {
+      const r = await authedFetch("/api/followup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -251,7 +252,7 @@ function SalescribeApp() {
           related_past_memos: related,
         }),
       });
-      if (!r.ok) throw new Error(`Coach failed (${r.status})`);
+      if (!r.ok) throw new Error(await apiError(r, "Coach failed"));
       const data = (await r.json()) as { result: FollowupResult };
       if (data.result.done) {
         setCurrentQuestion("");
@@ -275,15 +276,8 @@ function SalescribeApp() {
     try {
       const fd = new FormData();
       fd.append("audio", new File([blob], filename, { type: blob.type }));
-      const r = await fetch("/api/transcribe", { method: "POST", body: fd });
-      if (!r.ok) {
-        let detail = "";
-        try {
-          const body = await r.json();
-          detail = body.error ? `: ${body.error}` : "";
-        } catch {}
-        throw new Error(`Transcription failed (${r.status})${detail}`);
-      }
+      const r = await authedFetch("/api/transcribe", { method: "POST", body: fd });
+      if (!r.ok) throw new Error(await apiError(r, "Transcription failed"));
       const data = (await r.json()) as { transcript: string };
       await processTranscript(data.transcript);
     } catch (e) {
@@ -304,7 +298,7 @@ function SalescribeApp() {
     setReplyDraft("");
     setStatus("extracting");
     try {
-      const r = await fetch("/api/extract", {
+      const r = await authedFetch("/api/extract", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -313,7 +307,7 @@ function SalescribeApp() {
           reference_now_iso: new Date().toISOString(),
         }),
       });
-      if (!r.ok) throw new Error(`Re-extraction failed (${r.status})`);
+      if (!r.ok) throw new Error(await apiError(r, "Re-extraction failed"));
       const data = (await r.json()) as { extraction: Extraction };
       setExtraction(data.extraction);
       const related = findRelatedMemos(data.extraction, pastMemos);
@@ -366,19 +360,12 @@ function SalescribeApp() {
     setBriefError("");
     setBriefLoading(true);
     try {
-      const r = await fetch("/api/brief", {
+      const r = await authedFetch("/api/brief", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ company, memos: matching }),
       });
-      if (!r.ok) {
-        let detail = "";
-        try {
-          const body = await r.json();
-          detail = body.error ? `: ${body.error}` : "";
-        } catch {}
-        throw new Error(`Briefing failed (${r.status})${detail}`);
-      }
+      if (!r.ok) throw new Error(await apiError(r, "Briefing failed"));
       const data = (await r.json()) as { brief: Brief };
       setCurrentBrief(data.brief);
     } catch (e) {
@@ -402,7 +389,7 @@ function SalescribeApp() {
   async function fetchSample(): Promise<string> {
     setSampleLoading(true);
     try {
-      const r = await fetch("/api/sample", { method: "POST" });
+      const r = await authedFetch("/api/sample", { method: "POST" });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const data = (await r.json()) as { transcript?: string };
       if (!data.transcript || data.transcript.trim().length === 0) {

@@ -1,5 +1,7 @@
 import { NextRequest } from "next/server";
 import { getAnthropic, MODELS } from "@/lib/clients";
+import { authorize } from "@/lib/auth";
+import { recordUsage } from "@/lib/ratelimit";
 import { LIMITS } from "@/lib/limits";
 import { COACH_SYSTEM } from "@/lib/prompts";
 import { followupToolSchema, type Extraction, type ChatMessage, type FollowupResult, type Memo } from "@/lib/schema";
@@ -30,6 +32,9 @@ function compactMemo(m: Memo): object {
 }
 
 export async function POST(req: NextRequest) {
+  const principal = await authorize(req);
+  if (principal instanceof Response) return principal;
+
   const { transcript, extraction, chat, related_past_memos = [] } = (await req.json()) as Body;
 
   if (!transcript || !extraction) {
@@ -125,6 +130,13 @@ Decide: is the note reasonably complete? If yes, set done=true. If no, choose qu
     return Response.json(
       { error: "Model did not return a tool_use block." },
       { status: 502 },
+    );
+  }
+
+  if (principal.kind === "user") {
+    void recordUsage(
+      principal.uid,
+      (response.usage?.input_tokens ?? 0) + (response.usage?.output_tokens ?? 0),
     );
   }
 

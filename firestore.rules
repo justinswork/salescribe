@@ -8,6 +8,14 @@ service cloud.firestore {
       allow read, write, delete: if request.auth != null && request.auth.uid == uid;
     }
 
+    // Per-user rate-limit + usage counters (usage/{uid}). Written ONLY by the
+    // server via the Admin SDK, which bypasses these rules. Clients must never
+    // read or tamper with their own quota — explicit deny (redundant with the
+    // default-deny below, but stated so the intent is obvious).
+    match /usage/{uid} {
+      allow read, write: if false;
+    }
+
     // Default-deny for everything else.
     match /{document=**} {
       allow read, write: if false;

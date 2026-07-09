@@ -1,5 +1,7 @@
 import { NextRequest } from "next/server";
 import { getAnthropic, MODELS } from "@/lib/clients";
+import { authorize } from "@/lib/auth";
+import { recordUsage } from "@/lib/ratelimit";
 import { LIMITS } from "@/lib/limits";
 import { BRIEFER_SYSTEM } from "@/lib/prompts";
 import { briefToolSchema, type Brief, type Memo } from "@/lib/schema";
@@ -32,6 +34,9 @@ function compactMemo(m: Memo) {
 }
 
 export async function POST(req: NextRequest) {
+  const principal = await authorize(req);
+  if (principal instanceof Response) return principal;
+
   try {
     const { company, memos } = (await req.json()) as Body;
 
@@ -93,6 +98,13 @@ Trace the arc chronologically (oldest first), identify what matters, and call su
       return Response.json(
         { error: "Model did not return a tool_use block." },
         { status: 502 },
+      );
+    }
+
+    if (principal.kind === "user") {
+      void recordUsage(
+        principal.uid,
+        (response.usage?.input_tokens ?? 0) + (response.usage?.output_tokens ?? 0),
       );
     }
 

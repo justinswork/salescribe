@@ -1,5 +1,7 @@
 import { NextRequest } from "next/server";
 import { getAnthropic, MODELS } from "@/lib/clients";
+import { authorize } from "@/lib/auth";
+import { recordUsage } from "@/lib/ratelimit";
 import { LIMITS } from "@/lib/limits";
 import { EXTRACTOR_SYSTEM } from "@/lib/prompts";
 import { extractionToolSchema, type Extraction, type ChatMessage } from "@/lib/schema";
@@ -15,6 +17,9 @@ type Body = {
 };
 
 export async function POST(req: NextRequest) {
+  const principal = await authorize(req);
+  if (principal instanceof Response) return principal;
+
   const body = (await req.json()) as Body;
   const { transcript, chat = [], reference_now_iso } = body;
 
@@ -80,6 +85,13 @@ ${transcript}${dialogueAddendum}
     return Response.json(
       { error: "Model did not return a tool_use block.", raw: response.content },
       { status: 502 },
+    );
+  }
+
+  if (principal.kind === "user") {
+    void recordUsage(
+      principal.uid,
+      (response.usage?.input_tokens ?? 0) + (response.usage?.output_tokens ?? 0),
     );
   }
 

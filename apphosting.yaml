@@ -4,7 +4,14 @@
 # Secrets are managed in Google Secret Manager. Create them with:
 #   firebase apphosting:secrets:set ANTHROPIC_API_KEY
 #   firebase apphosting:secrets:set OPENAI_API_KEY
+#   firebase apphosting:secrets:set SALESCRIBE_SERVICE_TOKEN   # any long random string
 # (The CLI prompts for the value and grants access to the App Hosting service account.)
+#
+# Auth enforcement: the /api/* routes verify a Firebase ID token (or the
+# service token above) and rate-limit per user. Enforcement turns on
+# automatically in this runtime because Cloud Run sets K_SERVICE — no flag
+# needed. ID-token verification and the rate-limit store use the App Hosting
+# runtime service account's Application Default Credentials (no key file).
 
 runConfig:
   cpu: 1
@@ -22,6 +29,13 @@ env:
       - RUNTIME
   - variable: OPENAI_API_KEY
     secret: OPENAI_API_KEY
+    availability:
+      - RUNTIME
+  # Shared bearer token for server-to-server callers (the eval harness). Real
+  # users authenticate with their Firebase ID token instead; this is the
+  # non-interactive path. Runtime-only — never bundled into the client.
+  - variable: SALESCRIBE_SERVICE_TOKEN
+    secret: SALESCRIBE_SERVICE_TOKEN
     availability:
       - RUNTIME
 

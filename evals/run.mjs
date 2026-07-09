@@ -9,6 +9,19 @@ import { cases } from "./cases.mjs";
 
 const URL = process.env.SALESCRIBE_URL || "http://localhost:3000";
 
+// When auth is enforced (production), the API routes require a bearer token.
+// Evals are server-to-server, so they authenticate with the shared service
+// token instead of a Firebase session. Locally (auth bypassed) this is unset
+// and the header is simply omitted. Set it to match the deployed
+// SALESCRIBE_SERVICE_TOKEN secret when evaluating production.
+const SERVICE_TOKEN = process.env.SALESCRIBE_SERVICE_TOKEN;
+
+function jsonHeaders() {
+  const h = { "Content-Type": "application/json" };
+  if (SERVICE_TOKEN) h["Authorization"] = `Bearer ${SERVICE_TOKEN}`;
+  return h;
+}
+
 const COLORS = {
   reset: "\x1b[0m",
   red: "\x1b[31m",
@@ -25,7 +38,7 @@ function color(c, s) {
 async function runExtractCase(c) {
   const r = await fetch(`${URL}/api/extract`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: jsonHeaders(),
     body: JSON.stringify({
       transcript: c.transcript,
       chat: [],
@@ -43,7 +56,7 @@ async function runExtractCase(c) {
 async function runFollowupCase(c) {
   const r = await fetch(`${URL}/api/followup`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: jsonHeaders(),
     body: JSON.stringify({
       transcript: c.transcript,
       extraction: c.extraction,
@@ -62,7 +75,7 @@ async function runFollowupCase(c) {
 async function runBriefCase(c) {
   const r = await fetch(`${URL}/api/brief`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: jsonHeaders(),
     body: JSON.stringify({ company: c.company, memos: c.memos }),
   });
   if (!r.ok) {

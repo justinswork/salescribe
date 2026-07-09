@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { getOpenAI, MODELS } from "@/lib/clients";
+import { authorize } from "@/lib/auth";
 import { LIMITS } from "@/lib/limits";
 
 export const runtime = "nodejs";
@@ -15,6 +16,9 @@ const VOICES = new Set(["alloy", "echo", "fable", "onyx", "nova", "shimmer"]);
 type OpenAIVoice = "alloy" | "echo" | "fable" | "onyx" | "nova" | "shimmer";
 
 export async function POST(req: NextRequest) {
+  const principal = await authorize(req);
+  if (principal instanceof Response) return principal;
+
   try {
     const { text, voice } = (await req.json()) as Body;
     if (!text || typeof text !== "string" || !text.trim()) {

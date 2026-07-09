@@ -1,11 +1,15 @@
 import { NextRequest } from "next/server";
 import { getOpenAI, MODELS } from "@/lib/clients";
+import { authorize } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
 export async function POST(req: NextRequest) {
+  const principal = await authorize(req);
+  if (principal instanceof Response) return principal;
+
   try {
     const formData = await req.formData();
     const audio = formData.get("audio");
