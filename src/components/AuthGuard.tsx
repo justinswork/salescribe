@@ -2,9 +2,10 @@
 
 import { useAuth } from "@/lib/AuthContext";
 import SignInScreen from "./SignInScreen";
+import VerifyEmailScreen from "./VerifyEmailScreen";
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth();
+  const { user, emailVerified, loading } = useAuth();
 
   if (loading) {
     return (
@@ -15,5 +16,6 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   }
 
   if (!user) return <SignInScreen />;
+  if (!emailVerified) return <VerifyEmailScreen />;
   return <>{children}</>;
 }

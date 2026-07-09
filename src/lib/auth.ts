@@ -74,6 +74,14 @@ export async function requireAuth(req: NextRequest): Promise<Principal | Respons
   if (!token) return unauthorized("Sign in to continue.");
   try {
     const decoded = await getAdminAuth().verifyIdToken(token);
+    // Defense in depth: the client already holds unverified users on the
+    // verify screen, but reject their token here too so it can't be replayed
+    // directly against the API. Only blocks tokens that explicitly report an
+    // unverified email (email/password sign-ups); OAuth providers report the
+    // address as verified, and we don't over-block tokens that omit the claim.
+    if (decoded.email_verified === false) {
+      return unauthorized("Please confirm your email address before continuing.");
+    }
     return { uid: decoded.uid, kind: "user" };
   } catch {
     return unauthorized("Your session has expired. Please sign in again.");
