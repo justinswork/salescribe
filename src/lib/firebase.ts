@@ -1,7 +1,7 @@
 "use client";
 
 import { initializeApp, getApps, type FirebaseApp } from "firebase/app";
-import { getAuth as fbGetAuth, GoogleAuthProvider, type Auth } from "firebase/auth";
+import { getAuth as fbGetAuth, GoogleAuthProvider, OAuthProvider, type Auth } from "firebase/auth";
 import { getFirestore, type Firestore } from "firebase/firestore";
 
 // Firebase Web SDK config. NEXT_PUBLIC_* values get baked into the client
@@ -46,3 +46,16 @@ export function getDbInstance(): Firestore {
 
 // Provider construction doesn't touch config — safe to export as a const.
 export const googleProvider = new GoogleAuthProvider();
+
+// Microsoft (Entra ID) sign-in. `tenant: "organizations"` routes auth through
+// the work/school authority, so any company's Microsoft 365 account can sign
+// in but personal consumer accounts (@outlook.com / @hotmail.com) cannot.
+// `prompt: "select_account"` always shows the account picker instead of
+// silently reusing whichever Microsoft session the browser already has.
+// (To lock this to a single company later, swap "organizations" for that
+// tenant's Directory ID and set the Azure app registration to single-tenant.)
+export const microsoftProvider = new OAuthProvider("microsoft.com");
+microsoftProvider.setCustomParameters({
+  tenant: "organizations",
+  prompt: "select_account",
+});

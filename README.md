@@ -160,7 +160,7 @@ This isn't a model constraint — Whisper's actual file-size ceiling is ~100 min
 
 ## Auth & data model
 
-- **Sign-in:** Required, Google-only via Firebase Authentication. No anonymous use.
+- **Sign-in:** Required, via Firebase Authentication. Google and Microsoft (Entra ID) providers; Microsoft is scoped to work/school accounts (`tenant: "organizations"`), so any Microsoft 365 org can sign in but personal consumer accounts can't. No anonymous use.
 - **Per-user memo storage:** Firestore subcollection at `users/{uid}/memos/{memoId}`. Each memo document mirrors the `Memo` TypeScript type — `{ id, created_iso, transcript, extraction, chat }`.
 - **Security:** Firestore rules ([`firestore.rules`](firestore.rules)) enforce `request.auth.uid == uid` on every read/write. Default-deny on everything else.
 - **Client-side reads/writes:** The Firebase client SDK talks to Firestore directly from the browser using the signed-in user's session. The Next.js API routes never touch user data — they only proxy to Anthropic/OpenAI. This keeps the route handlers stateless and makes auth a pure client concern.
