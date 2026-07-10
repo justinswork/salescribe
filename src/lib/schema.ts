@@ -271,12 +271,17 @@ export type Brief = {
 
 export type MemoVisibility = "shared" | "private";
 
+// A single field's before/after within an edit (rendered as a diff).
+export type MemoChange = { field: string; from: string; to: string };
+
 // One entry in a memo's edit history.
 export type MemoRevision = {
   at: string;
   byUid: string;
   byName: string;
   action: "created" | "edited";
+  // Field-level changes for an "edited" revision (empty/absent for "created").
+  changes?: MemoChange[];
 };
 
 export type Memo = {

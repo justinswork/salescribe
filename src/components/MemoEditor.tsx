@@ -86,7 +86,7 @@ export default function MemoEditor({
             reminders,
           },
         };
-        const saved = await updateMemo(updated);
+        const saved = await updateMemo(memo, updated);
         onUpdated(saved);
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));

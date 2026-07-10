@@ -27,7 +27,7 @@ import {
 } from "firebase/firestore";
 import { getAuthInstance, getDbInstance } from "./firebase";
 import { currentOrgId } from "./org";
-import type { Extraction, Memo, MemoRevision, MemoVisibility } from "./schema";
+import type { Extraction, Memo, MemoChange, MemoRevision, MemoVisibility } from "./schema";
 
 const MAX_RELATED = 3;
 
@@ -101,15 +101,68 @@ export async function saveMemo(memo: Memo): Promise<Memo> {
   return toSave;
 }
 
-// Overwrite a memo's contents (full edit) and append an "edited" revision.
-// The caller passes the whole updated memo, preserving seq/authorUid/created.
-export async function updateMemo(updated: Memo): Promise<Memo> {
+// Human-readable value for a field, for the diff view.
+function nameList(items: Array<{ name?: string; title?: string; text?: string }>): string {
+  const labels = items.map((x) => x.name || x.title || x.text || "—").filter(Boolean);
+  return labels.length ? `${labels.length}: ${labels.join(", ")}` : "none";
+}
+
+// Field-level diff between two versions of a memo, for the revision history.
+function diffMemo(prev: Memo, next: Memo): MemoChange[] {
+  const changes: MemoChange[] = [];
+  const add = (field: string, from: unknown, to: unknown) => {
+    const f = from == null ? "" : String(from);
+    const t = to == null ? "" : String(to);
+    if (f !== t) changes.push({ field, from: f, to: t });
+  };
+
+  add("Transcript", prev.transcript, next.transcript);
+  add("Summary", prev.extraction.summary, next.extraction.summary);
+  add("Visibility", prev.visibility ?? "shared", next.visibility ?? "shared");
+
+  const dealFields: Array<[keyof NonNullable<Extraction["deal"]>, string]> = [
+    ["company", "Company"],
+    ["prospect_name", "Prospect name"],
+    ["stated_problem", "Stated problem"],
+    ["budget_signals", "Budget signals"],
+    ["decision_makers", "Decision makers"],
+    ["objections", "Objections"],
+    ["competitors", "Competitors"],
+    ["next_step", "Next step"],
+    ["next_step_due_iso", "Next step due"],
+  ];
+  for (const [key, label] of dealFields) {
+    add(label, prev.extraction.deal?.[key] ?? "", next.extraction.deal?.[key] ?? "");
+  }
+
+  // Arrays: compare structurally; show a readable label list when they differ.
+  const arrayField = (
+    field: string,
+    a: Array<{ name?: string; title?: string; text?: string }>,
+    b: Array<{ name?: string; title?: string; text?: string }>,
+  ) => {
+    if (JSON.stringify(a) !== JSON.stringify(b)) {
+      changes.push({ field, from: nameList(a), to: nameList(b) });
+    }
+  };
+  arrayField("Contacts", prev.extraction.contacts, next.extraction.contacts);
+  arrayField("Calendar events", prev.extraction.calendar_events, next.extraction.calendar_events);
+  arrayField("Reminders", prev.extraction.reminders, next.extraction.reminders);
+
+  return changes;
+}
+
+// Overwrite a memo's contents (full edit) and append an "edited" revision with
+// the field-level diff. The caller passes the previous memo and the whole
+// updated memo (which preserves seq/authorUid/created).
+export async function updateMemo(previous: Memo, updated: Memo): Promise<Memo> {
   const { uid, name } = editorOf();
   const revision: MemoRevision = {
     at: new Date().toISOString(),
     byUid: uid,
     byName: name,
     action: "edited",
+    changes: diffMemo(previous, updated),
   };
   const toSave: Memo = {
     ...updated,
