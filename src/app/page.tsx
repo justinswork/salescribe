@@ -120,6 +120,9 @@ function SalescribeApp() {
   const [listening, setListening] = useState(false);
   const [partialReply, setPartialReply] = useState("");
   const listenHandleRef = useRef<ListenHandle | null>(null);
+  // Latest browser live-transcript, mirrored to a ref so the transcription
+  // fallback (when the org has no OpenAI key) can read it without a stale closure.
+  const liveTranscriptRef = useRef("");
 
   // Load past memos whenever the signed-in user changes.
   useEffect(() => {
@@ -136,6 +139,11 @@ function SalescribeApp() {
       cancelled = true;
     };
   }, [user]);
+
+  // Keep the ref in sync so onAudio can read the freshest browser transcript.
+  useEffect(() => {
+    liveTranscriptRef.current = liveTranscript;
+  }, [liveTranscript]);
 
   function reset() {
     cancelSpeech();
@@ -306,14 +314,39 @@ function SalescribeApp() {
   async function onAudio(blob: Blob, filename: string) {
     setStatus("transcribing");
     setError("");
+    const browserText = liveTranscriptRef.current.trim();
     try {
       const fd = new FormData();
       fd.append("audio", new File([blob], filename, { type: blob.type }));
       const r = await authedFetch("/api/transcribe", { method: "POST", body: fd });
-      if (!r.ok) throw new Error(await apiError(r, "Transcription failed"));
-      const data = (await r.json()) as { transcript: string };
-      await processTranscript(data.transcript);
+      if (r.ok) {
+        const data = (await r.json()) as { transcript: string };
+        await processTranscript(data.transcript);
+        return;
+      }
+      // Whisper unavailable (most often: the org hasn't set an OpenAI key).
+      // Fall back to the transcript the browser captured while recording.
+      const body = (await r.json().catch(() => ({}))) as { code?: string; error?: string };
+      if (browserText) {
+        await processTranscript(browserText);
+        return;
+      }
+      // No browser transcript either (e.g. Firefox) — guide the user to type.
+      if (body.code === "org_key_missing") {
+        setMode("text");
+        setError(
+          "Voice transcription needs an OpenAI key (an admin can add one under Team settings), or a browser that supports speech recognition. You can type your note below in the meantime.",
+        );
+      } else {
+        setError(body.error || "Transcription failed.");
+      }
+      setStatus("error");
     } catch (e) {
+      // Network/other failure: use the browser transcript if we have one.
+      if (browserText) {
+        await processTranscript(browserText);
+        return;
+      }
       setError(e instanceof Error ? e.message : String(e));
       setStatus("error");
     }

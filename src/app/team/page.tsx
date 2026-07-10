@@ -382,9 +382,11 @@ function TeamPageContent() {
               API keys
             </h2>
             <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-4">
-              Your organization supplies its own keys. Anthropic powers extraction, coaching, and briefings;
-              OpenAI (Whisper) powers transcription. Both are required for AI features to work. Keys are stored
-              securely and never shown again — leave a field blank to keep the current one.
+              Your organization supplies its own keys. <span className="font-medium">Anthropic is required</span> —
+              it powers extraction, coaching, and briefings. <span className="font-medium">OpenAI is optional</span>:
+              it enables high-accuracy Whisper transcription; without it, recording uses your browser&apos;s built-in
+              speech recognition. Keys are stored securely and never shown again — leave a field blank to keep the
+              current one.
             </p>
             <div className="flex flex-col gap-4">
               <div>
@@ -404,7 +406,7 @@ function TeamPageContent() {
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">OpenAI API key</span>
-                  <KeyBadge state={keyStatus?.hasOpenai} />
+                  <KeyBadge state={keyStatus?.hasOpenai} optional />
                 </div>
                 <input
                   type="password"
@@ -434,15 +436,23 @@ function TeamPageContent() {
   );
 }
 
-function KeyBadge({ state }: { state: boolean | undefined }) {
+function KeyBadge({ state, optional }: { state: boolean | undefined; optional?: boolean }) {
   if (state === undefined) return null;
-  return state ? (
-    <span className="rounded-full bg-green-100 dark:bg-green-950/40 px-2 py-0.5 text-[10px] font-semibold text-green-800 dark:text-green-300 uppercase tracking-wide">
-      Configured
+  if (state) {
+    return (
+      <span className="rounded-full bg-green-100 dark:bg-green-950/40 px-2 py-0.5 text-[10px] font-semibold text-green-800 dark:text-green-300 uppercase tracking-wide">
+        Configured
+      </span>
+    );
+  }
+  // Not set: neutral "Optional" for OpenAI, amber "Required" for Anthropic.
+  return optional ? (
+    <span className="rounded-full bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 text-[10px] font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wide">
+      Optional — not set
     </span>
   ) : (
     <span className="rounded-full bg-amber-100 dark:bg-amber-950/40 px-2 py-0.5 text-[10px] font-semibold text-amber-800 dark:text-amber-300 uppercase tracking-wide">
-      Not set
+      Required — not set
     </span>
   );
 }
