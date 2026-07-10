@@ -14,8 +14,6 @@
 // speechSynthesis but not SpeechRecognition. The hands-free toggle is
 // disabled in unsupported browsers — see HandsFreeContext.
 
-import { authedFetch } from "./api";
-
 // ----------------------------------------------------------------------------
 // Minimal type declarations for SpeechRecognition (not in standard lib.dom.d.ts).
 // ----------------------------------------------------------------------------
@@ -58,75 +56,21 @@ export function isSTTSupported(): boolean {
 }
 
 // ----------------------------------------------------------------------------
-// TTS
+// TTS — browser speechSynthesis (no external key needed). Instant; voice
+// quality depends on the OS/browser. speak() resolves when playback ends.
+// (The `voice` option is accepted but unused now that server TTS is gone.)
 // ----------------------------------------------------------------------------
-//
-// Two layers:
-//   1. Primary: server-side TTS via /api/speak (OpenAI tts-1, voice "nova").
-//      Sounds genuinely conversational; ~1-2s of latency for the first byte.
-//   2. Fallback: browser speechSynthesis. Instant but robotic. Triggered if
-//      the server route fails (rate limit, network, autoplay blocked, etc).
-//
-// speak() returns a Promise that resolves when audio playback ends, regardless
-// of which path actually produced the sound. Callers don't need to know which.
 
-let currentAudio: HTMLAudioElement | null = null;
-
-export async function speak(
+export function speak(
   text: string,
   opts?: { rate?: number; pitch?: number; voice?: string },
 ): Promise<void> {
-  if (!text.trim()) return;
   cancelSpeech();
-  try {
-    const res = await authedFetch("/api/speak", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, voice: opts?.voice }),
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const blob = await res.blob();
-    if (blob.size === 0) throw new Error("Empty audio response");
-
-    const url = URL.createObjectURL(blob);
-    await new Promise<void>((resolve) => {
-      const audio = new Audio(url);
-      currentAudio = audio;
-      const cleanup = () => {
-        URL.revokeObjectURL(url);
-        if (currentAudio === audio) currentAudio = null;
-      };
-      audio.onended = () => {
-        cleanup();
-        resolve();
-      };
-      audio.onerror = () => {
-        cleanup();
-        // Resolve here; we'll fall through to browser TTS below if needed.
-        fallbackSpeak(text, opts).then(resolve);
-      };
-      audio.play().catch(() => {
-        // Autoplay blocked or other playback failure.
-        cleanup();
-        fallbackSpeak(text, opts).then(resolve);
-      });
-    });
-  } catch {
-    // Network / 5xx / etc — silently fall back to browser TTS.
-    await fallbackSpeak(text, opts);
-  }
-}
-
-function fallbackSpeak(
-  text: string,
-  opts?: { rate?: number; pitch?: number },
-): Promise<void> {
   return new Promise((resolve) => {
     if (!isTTSSupported() || !text.trim()) {
       resolve();
       return;
     }
-    window.speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
     u.rate = opts?.rate ?? 1.0;
     u.pitch = opts?.pitch ?? 1.0;
@@ -138,15 +82,6 @@ function fallbackSpeak(
 }
 
 export function cancelSpeech(): void {
-  if (currentAudio) {
-    try {
-      currentAudio.pause();
-      currentAudio.src = "";
-    } catch {
-      // ignore
-    }
-    currentAudio = null;
-  }
   if (isTTSSupported()) window.speechSynthesis.cancel();
 }
 
