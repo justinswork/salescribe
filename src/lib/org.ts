@@ -19,7 +19,7 @@ import {
   setDoc,
   updateDoc,
 } from "firebase/firestore";
-import type { User } from "firebase/auth";
+import { updateProfile, type User } from "firebase/auth";
 import { getDbInstance } from "./firebase";
 import type { Invite, Org, OrgMember, OrgRole, UserProfile } from "./schema";
 
@@ -257,4 +257,39 @@ export async function removeMember(orgId: string, uid: string): Promise<void> {
 
 export async function renameOrg(orgId: string, name: string): Promise<void> {
   await updateDoc(doc(getDbInstance(), "orgs", orgId), { name: name.trim() });
+}
+
+// ---- User profile -----------------------------------------------------------
+
+export async function getUserProfile(uid: string): Promise<UserProfile | null> {
+  const snap = await getDoc(doc(getDbInstance(), "users", uid));
+  return snap.exists() ? (snap.data() as UserProfile) : null;
+}
+
+// Save the user's editable profile. Writes in three places so the change shows
+// up everywhere: Firebase Auth (name/photo the app already reads app-wide), the
+// private profile doc (source of truth incl. title + avatar color), and the org
+// member doc (so the team roster renders the new name/avatar).
+export async function updateUserProfile(
+  user: User,
+  fields: { displayName: string; title?: string; avatarColor?: string | null; photoURL?: string | null },
+): Promise<void> {
+  const displayName = fields.displayName.trim() || user.email || "Teammate";
+  const photoURL = fields.photoURL?.trim() ? fields.photoURL.trim() : null;
+  const avatarColor = fields.avatarColor ?? null;
+  const title = fields.title?.trim() ?? "";
+
+  await updateProfile(user, { displayName, photoURL });
+
+  const db = getDbInstance();
+  await setDoc(
+    doc(db, "users", user.uid),
+    { displayName, title, avatarColor, photoURL },
+    { merge: true },
+  );
+  await setDoc(
+    doc(db, "orgs", currentOrgId(), "members", user.uid),
+    { displayName, avatarColor, photoURL },
+    { merge: true },
+  );
 }

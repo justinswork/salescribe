@@ -12,7 +12,8 @@ import {
   User,
 } from "firebase/auth";
 import { getAuthInstance, googleProvider, microsoftProvider } from "./firebase";
-import { resolveOrg, type OrgContext } from "./org";
+import { resolveOrg, getUserProfile, type OrgContext } from "./org";
+import type { UserProfile } from "./schema";
 
 export type ProviderId = "google" | "microsoft";
 
@@ -26,8 +27,10 @@ type AuthState = {
   // waits on this before loading memos, since every memo path is org-scoped.
   org: OrgContext | null;
   orgLoading: boolean;
-  // Re-resolve the current user's org (after joining via invite, a role change,
-  // etc.) so the app reflects it without a full reload.
+  // The current user's editable profile (name, title, avatar color/photo).
+  profile: UserProfile | null;
+  // Re-resolve the current user's org + profile (after joining via invite, a
+  // role change, or a profile edit) so the app reflects it without a reload.
   reloadOrg: () => Promise<void>;
   signIn: (provider?: ProviderId) => Promise<void>;
   signInWithEmail: (email: string, password: string) => Promise<void>;
@@ -47,6 +50,7 @@ const AuthContext = createContext<AuthState>({
   emailVerified: false,
   org: null,
   orgLoading: false,
+  profile: null,
   reloadOrg: async () => {},
   signIn: async () => {},
   signInWithEmail: async () => {},
@@ -98,6 +102,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [authError, setAuthError] = useState<string | null>(null);
   const [org, setOrg] = useState<OrgContext | null>(null);
   const [orgLoading, setOrgLoading] = useState(false);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
 
   useEffect(() => {
     return onAuthStateChanged(getAuthInstance(), (u) => {
@@ -105,7 +110,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setEmailVerified(u?.emailVerified ?? false);
       // Clear org membership on sign-out; the effect below re-resolves it when
       // a verified user is present.
-      if (!u) setOrg(null);
+      if (!u) {
+        setOrg(null);
+        setProfile(null);
+      }
       setLoading(false);
     });
   }, []);
@@ -122,6 +130,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const resolved = await resolveOrg(user);
         if (!cancelled) setOrg(resolved);
+        const p = await getUserProfile(user.uid);
+        if (!cancelled) setProfile(p);
       } catch (e) {
         if (!cancelled) setAuthError(e instanceof Error ? e.message : String(e));
       } finally {
@@ -137,6 +147,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const current = getAuthInstance().currentUser;
     if (!current) return;
     setOrg(await resolveOrg(current));
+    setProfile(await getUserProfile(current.uid));
   }
 
   async function signIn(providerId: ProviderId = "google") {
@@ -229,6 +240,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         emailVerified,
         org,
         orgLoading,
+        profile,
         reloadOrg,
         signIn,
         signInWithEmail,

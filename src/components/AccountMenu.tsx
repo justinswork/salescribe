@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import Avatar from "./Avatar";
 import { useAuth } from "@/lib/AuthContext";
 import { clearDemoData, hasDemoData, loadDemoData } from "@/lib/storage";
 
 export default function AccountMenu() {
-  const { user, org, signOut } = useAuth();
+  const { user, org, profile, signOut } = useAuth();
   const [open, setOpen] = useState(false);
   const [demoBusy, setDemoBusy] = useState(false);
   // null = haven't checked yet (treat as "still loading" in UI).
@@ -35,13 +36,6 @@ export default function AccountMenu() {
   }, [open, user]);
 
   if (!user) return null;
-
-  const initials = (user.displayName || user.email || "?")
-    .split(/\s+/)
-    .map((s) => s[0])
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
 
   async function handleLoadDemo() {
     const ok = window.confirm(
@@ -110,21 +104,14 @@ export default function AccountMenu() {
         className="flex items-center gap-2 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 px-2 py-1"
         aria-label="Account menu"
       >
-        {user.photoURL ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={user.photoURL}
-            alt=""
-            width={28}
-            height={28}
-            className="rounded-full"
-            referrerPolicy="no-referrer"
-          />
-        ) : (
-          <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-zinc-900 text-white text-xs dark:bg-zinc-100 dark:text-zinc-900">
-            {initials}
-          </span>
-        )}
+        <Avatar
+          size={28}
+          name={user.displayName || user.email || "You"}
+          seed={user.uid}
+          photoURL={user.photoURL}
+          color={profile?.avatarColor}
+          label="Account menu"
+        />
       </button>
       {open && (
         <>
@@ -148,6 +135,13 @@ export default function AccountMenu() {
               )}
             </div>
             <div className="border-t border-zinc-200 dark:border-zinc-800" />
+            <Link
+              href="/profile"
+              onClick={() => setOpen(false)}
+              className="block w-full text-left px-3 py-2 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+            >
+              Profile
+            </Link>
             <Link
               href="/team"
               onClick={() => setOpen(false)}

@@ -313,6 +313,10 @@ export type OrgMember = {
   displayName: string;
   role: OrgRole;
   joined_iso: string;
+  // Mirrored from the user's profile so the roster can render their avatar
+  // without reading every member's private profile doc.
+  avatarColor?: string;
+  photoURL?: string;
 };
 
 // A pending invite for an off-domain teammate. Doc id is the invited email
@@ -336,4 +340,9 @@ export type UserProfile = {
   role: OrgRole;
   email: string;
   displayName: string;
+  // User-editable profile fields (see the profile page). avatarColor is one of
+  // the identity palette hexes, or unset to use the auto (hashed) color.
+  title?: string;
+  avatarColor?: string;
+  photoURL?: string;
 };

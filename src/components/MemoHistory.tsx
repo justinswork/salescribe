@@ -14,6 +14,7 @@ type Props = {
   // the Firestore rules).
   currentUid?: string;
   currentPhotoURL?: string | null;
+  currentColor?: string | null;
 };
 
 const VISIBLE_LIMIT = 8;
@@ -36,6 +37,7 @@ export default function MemoHistory({
   onDelete,
   currentUid,
   currentPhotoURL,
+  currentColor,
 }: Props) {
   if (memos.length === 0) return null;
 
@@ -114,6 +116,7 @@ export default function MemoHistory({
                   seed={m.authorUid || authorName}
                   label={mine ? "You" : authorName}
                   photoURL={mine ? currentPhotoURL : undefined}
+                  color={mine ? currentColor : undefined}
                 />
               </div>
             </li>

@@ -78,7 +78,7 @@ function VisibilityToggle({
 }
 
 function SalescribeApp() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const handsFree = useHandsFree();
 
   const [status, setStatus] = useState<Status>("idle");
@@ -889,6 +889,7 @@ function SalescribeApp() {
                         onDelete={handleDelete}
                         currentUid={user?.uid}
                         currentPhotoURL={user?.photoURL}
+                        currentColor={profile?.avatarColor}
                       />
                     </div>
                   )}

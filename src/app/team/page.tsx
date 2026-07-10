@@ -214,7 +214,8 @@ function TeamPageContent() {
                       name={m.displayName}
                       seed={m.uid}
                       label={isSelf ? "You" : m.displayName}
-                      photoURL={isSelf ? user?.photoURL : undefined}
+                      photoURL={m.photoURL ?? (isSelf ? user?.photoURL : undefined)}
+                      color={m.avatarColor}
                     />
                     <div className="flex-1 min-w-0">
                       <div className="text-sm text-zinc-900 dark:text-zinc-100 truncate">

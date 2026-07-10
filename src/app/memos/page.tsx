@@ -25,7 +25,7 @@ export default function MemosPage() {
 }
 
 function MemosPageContent() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -379,6 +379,7 @@ function MemosPageContent() {
                             seed={m.authorUid || authorName}
                             label={mine ? "You" : authorName}
                             photoURL={mine ? user?.photoURL : undefined}
+                            color={mine ? profile?.avatarColor : undefined}
                           />
                         );
                       })()}

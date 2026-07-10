@@ -5,7 +5,7 @@ import type { CSSProperties } from "react";
 // person is always the same color everywhere. (Future: let users pick their own
 // photo or color; this is the sensible default until then.)
 
-const AVATAR_COLORS = [
+export const AVATAR_COLORS = [
   "#0F6E56", // teal
   "#534AB7", // purple
   "#993C1D", // coral
@@ -34,6 +34,7 @@ export default function Avatar({
   name,
   seed,
   photoURL,
+  color,
   size = 40,
   label,
 }: {
@@ -42,6 +43,8 @@ export default function Avatar({
   // name; falls back to the name.
   seed?: string;
   photoURL?: string | null;
+  // Explicit color chosen by the user; overrides the auto (hashed) color.
+  color?: string | null;
   size?: number;
   // Tooltip text; defaults to the name.
   label?: string;
@@ -64,12 +67,12 @@ export default function Avatar({
     );
   }
 
-  const color = AVATAR_COLORS[hashString(seed || name) % AVATAR_COLORS.length];
+  const resolved = color || AVATAR_COLORS[hashString(seed || name) % AVATAR_COLORS.length];
   return (
     <span
       title={title}
       aria-label={title}
-      style={{ ...box, backgroundColor: color, fontSize: Math.round(size * 0.33) }}
+      style={{ ...box, backgroundColor: resolved, fontSize: Math.round(size * 0.33) }}
       className="shrink-0 inline-flex items-center justify-center rounded-full font-medium text-white"
     >
       {initialsFrom(name)}
