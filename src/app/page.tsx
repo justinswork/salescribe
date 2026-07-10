@@ -9,13 +9,12 @@ import AuthGuard from "@/components/AuthGuard";
 import AccountMenu from "@/components/AccountMenu";
 import ThemeToggle from "@/components/ThemeToggle";
 import HandsFreeToggle from "@/components/HandsFreeToggle";
-import BriefView from "@/components/BriefView";
-import MemoDetailView from "@/components/MemoDetailView";
 import { useAuth } from "@/lib/AuthContext";
 import { useHandsFree } from "@/lib/HandsFreeContext";
+import { useRouter } from "next/navigation";
 import { cancelSpeech, listenForReply, speak, type ListenHandle } from "@/lib/speech";
 import { authedFetch, apiError } from "@/lib/api";
-import type { Brief, ChatMessage, Extraction, FollowupResult, Memo, MemoVisibility } from "@/lib/schema";
+import type { ChatMessage, Extraction, FollowupResult, Memo, MemoVisibility } from "@/lib/schema";
 import {
   loadMemos,
   saveMemo,
@@ -23,7 +22,6 @@ import {
   setMemoVisibility,
   newMemoId,
   findRelatedMemos,
-  findMemosByCompany,
   getCompanyOptions,
 } from "@/lib/storage";
 
@@ -80,6 +78,7 @@ function VisibilityToggle({
 function SalescribeApp() {
   const { user, profile } = useAuth();
   const handsFree = useHandsFree();
+  const router = useRouter();
 
   const [status, setStatus] = useState<Status>("idle");
   const [transcript, setTranscript] = useState("");
@@ -96,28 +95,17 @@ function SalescribeApp() {
   const [pastMemos, setPastMemos] = useState<Memo[]>([]);
   const [relatedMemos, setRelatedMemos] = useState<Memo[]>([]);
   const [currentMemoId, setCurrentMemoId] = useState<string>("");
-  const [viewingMemo, setViewingMemo] = useState<Memo | null>(null);
   const [sampleLoading, setSampleLoading] = useState(false);
   // Visibility chosen for the memo currently being recorded. Shared by default
   // — the whole point of team accounts — with a per-memo private opt-out.
   const [visibility, setVisibility] = useState<MemoVisibility>("shared");
 
-  // Briefing state: when briefingCompany is non-empty, the main content area
-  // renders the BriefView (or its loading/error state) instead of the normal
-  // recording UI. A null currentBrief alongside a non-empty briefingCompany
-  // means we're still waiting on /api/brief to return.
   // Which tab is selected on the idle home page: the recent-memos list or
   // the pre-meeting briefings picker. Stored locally; doesn't need to persist
   // across reloads (a refresh always lands on Memos).
   const [homeTab, setHomeTab] = useState<"memos" | "briefings">("memos");
   // Team feed filter: everyone's shared memos vs. only the ones you authored.
   const [homeMemoFilter, setHomeMemoFilter] = useState<"all" | "mine">("all");
-
-  const [briefingCompany, setBriefingCompany] = useState<string>("");
-  const [briefingMemoCount, setBriefingMemoCount] = useState(0);
-  const [currentBrief, setCurrentBrief] = useState<Brief | null>(null);
-  const [briefLoading, setBriefLoading] = useState(false);
-  const [briefError, setBriefError] = useState("");
 
   // Live transcript from the browser's SpeechRecognition during memo recording.
   // This is just a UX preview — the authoritative transcript still comes from
@@ -167,7 +155,6 @@ function SalescribeApp() {
     setTextInput("");
     setRelatedMemos([]);
     setCurrentMemoId("");
-    setViewingMemo(null);
     setLiveTranscript("");
     setVisibility("shared");
   }
@@ -389,7 +376,7 @@ function SalescribeApp() {
   }
 
   function openMemo(m: Memo) {
-    setViewingMemo(m);
+    router.push(`/memos/${m.id}`);
   }
 
   async function handleDelete(id: string) {
@@ -403,45 +390,8 @@ function SalescribeApp() {
     await processTranscript(textInput.trim());
   }
 
-  // Pull all memos for `company` from the loaded list, POST them to /api/brief,
-  // render the Brief in BriefView. Errors fall through to the error state for
-  // the same view rather than dumping the user back to the home screen.
-  async function openBriefing(company: string) {
-    const matching = findMemosByCompany(company, pastMemos);
-    if (matching.length === 0) {
-      setBriefError(`No memos found for "${company}".`);
-      setBriefingCompany(company);
-      setBriefingMemoCount(0);
-      setCurrentBrief(null);
-      return;
-    }
-    setBriefingCompany(company);
-    setBriefingMemoCount(matching.length);
-    setCurrentBrief(null);
-    setBriefError("");
-    setBriefLoading(true);
-    try {
-      const r = await authedFetch("/api/brief", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ company, memos: matching }),
-      });
-      if (!r.ok) throw new Error(await apiError(r, "Briefing failed"));
-      const data = (await r.json()) as { brief: Brief };
-      setCurrentBrief(data.brief);
-    } catch (e) {
-      setBriefError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBriefLoading(false);
-    }
-  }
-
-  function closeBriefing() {
-    setBriefingCompany("");
-    setCurrentBrief(null);
-    setBriefError("");
-    setBriefLoading(false);
-    setBriefingMemoCount(0);
+  function openBriefing(company: string) {
+    router.push(`/brief/${encodeURIComponent(company)}`);
   }
 
   // Fetch a fresh AI-generated sample memo, falling back to the hardcoded
@@ -605,111 +555,6 @@ function SalescribeApp() {
       </div>
     </section>
   );
-
-  // Pre-meeting briefing view. Same shell as the memo-view branch — header
-  // with a "back" handler in the logo and an account menu on the right; main
-  // body either renders BriefView, a loading state, or an error.
-  if (briefingCompany) {
-    return (
-      <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
-        <header className="border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950">
-          <div className="mx-auto max-w-3xl px-6 py-5 flex items-center justify-between">
-            <button
-              type="button"
-              onClick={closeBriefing}
-              className="inline-flex items-baseline rounded text-left hover:opacity-80"
-              aria-label="Go to home"
-            >
-              <span className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-                Salescribe
-              </span>
-              <span
-                className="ml-3 align-middle text-xs font-mono font-normal text-zinc-400 dark:text-zinc-500"
-                title={`commit ${process.env.NEXT_PUBLIC_GIT_SHA}`}
-              >
-                v{process.env.NEXT_PUBLIC_APP_VERSION}
-              </span>
-            </button>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={closeBriefing}
-                className="text-sm text-zinc-500 dark:text-zinc-400 underline mr-2"
-              >
-                ← Back
-              </button>
-              <HandsFreeToggle />
-              <ThemeToggle />
-              <AccountMenu />
-            </div>
-          </div>
-        </header>
-        <main className="mx-auto max-w-3xl px-6 py-8 flex flex-col gap-6">
-          {briefLoading && (
-            <div className="flex items-center gap-3 text-sm text-zinc-600 dark:text-zinc-400">
-              <span className="inline-block h-3 w-3 rounded-full bg-zinc-400 animate-pulse" />
-              <span>
-                Prepping for your meeting with {briefingCompany} — reading {briefingMemoCount} past memo{briefingMemoCount === 1 ? "" : "s"}…
-              </span>
-            </div>
-          )}
-          {briefError && (
-            <div className="rounded border border-red-300 bg-red-50 dark:bg-red-950/30 dark:border-red-900 p-3 text-sm text-red-800 dark:text-red-200">
-              {briefError}
-            </div>
-          )}
-          {currentBrief && (
-            <BriefView
-              company={briefingCompany}
-              memoCount={briefingMemoCount}
-              brief={currentBrief}
-            />
-          )}
-        </main>
-      </div>
-    );
-  }
-
-  // Read-only view of a saved memo.
-  if (viewingMemo) {
-    return (
-      <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
-        <header className="border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950">
-          <div className="mx-auto max-w-3xl px-6 py-5 flex items-center justify-between">
-            <button
-              type="button"
-              onClick={() => setViewingMemo(null)}
-              className="inline-flex items-baseline rounded text-left hover:opacity-80"
-              aria-label="Go to home"
-            >
-              <span className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-                Salescribe
-              </span>
-              <span
-                className="ml-3 align-middle text-xs font-mono font-normal text-zinc-400 dark:text-zinc-500"
-                title={`commit ${process.env.NEXT_PUBLIC_GIT_SHA}`}
-              >
-                v{process.env.NEXT_PUBLIC_APP_VERSION}
-              </span>
-            </button>
-            <div className="flex items-center gap-2">
-              <ThemeToggle />
-              <AccountMenu />
-            </div>
-          </div>
-        </header>
-        <main className="mx-auto max-w-3xl px-6 py-8 flex flex-col gap-6">
-          <MemoDetailView
-            memo={viewingMemo}
-            onUpdated={(m) => {
-              setViewingMemo(m);
-              void loadMemos().then(setPastMemos);
-            }}
-          />
-        </main>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">

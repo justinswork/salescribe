@@ -172,6 +172,11 @@ export async function updateMemo(previous: Memo, updated: Memo): Promise<Memo> {
   return toSave;
 }
 
+export async function getMemo(id: string): Promise<Memo | null> {
+  const snap = await getDoc(doc(memosCollection(), id));
+  return snap.exists() ? (snap.data() as Memo) : null;
+}
+
 export async function deleteMemo(id: string): Promise<void> {
   await deleteDoc(doc(memosCollection(), id));
 }

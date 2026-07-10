@@ -7,7 +7,6 @@ import AuthGuard from "@/components/AuthGuard";
 import AccountMenu from "@/components/AccountMenu";
 import ThemeToggle from "@/components/ThemeToggle";
 import HandsFreeToggle from "@/components/HandsFreeToggle";
-import MemoDetailView from "@/components/MemoDetailView";
 import Avatar from "@/components/Avatar";
 import VisibilityPill from "@/components/VisibilityPill";
 import { useAuth } from "@/lib/AuthContext";
@@ -39,7 +38,6 @@ function MemosPageContent() {
 
   const [memos, setMemos] = useState<Memo[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedMemo, setSelectedMemo] = useState<Memo | null>(null);
   const [inputValue, setInputValue] = useState(urlQuery);
 
   // Load memos when the signed-in user is known.
@@ -234,15 +232,6 @@ function MemosPageContent() {
           </span>
         </Link>
         <div className="flex items-center gap-2">
-          {selectedMemo && (
-            <button
-              type="button"
-              onClick={() => setSelectedMemo(null)}
-              className="text-sm text-zinc-500 dark:text-zinc-400 underline mr-2"
-            >
-              ← Back to list
-            </button>
-          )}
           <HandsFreeToggle />
           <ThemeToggle />
           <AccountMenu />
@@ -250,23 +239,6 @@ function MemosPageContent() {
       </div>
     </header>
   );
-
-  if (selectedMemo) {
-    return (
-      <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
-        {header}
-        <main className="mx-auto max-w-3xl px-6 py-8 flex flex-col gap-6">
-          <MemoDetailView
-            memo={selectedMemo}
-            onUpdated={(m) => {
-              setSelectedMemo(m);
-              void loadMemos().then(setMemos);
-            }}
-          />
-        </main>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
@@ -372,7 +344,7 @@ function MemosPageContent() {
                     <div className="flex items-center justify-between gap-3">
                       <button
                         type="button"
-                        onClick={() => setSelectedMemo(m)}
+                        onClick={() => router.push(`/memos/${m.id}`)}
                         className="flex-1 min-w-0 text-left text-sm"
                       >
                         <div className="font-medium text-zinc-900 dark:text-zinc-100 truncate">
