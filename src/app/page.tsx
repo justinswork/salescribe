@@ -699,7 +699,13 @@ function SalescribeApp() {
           </div>
         </header>
         <main className="mx-auto max-w-3xl px-6 py-8 flex flex-col gap-6">
-          <MemoDetailView memo={viewingMemo} />
+          <MemoDetailView
+            memo={viewingMemo}
+            onUpdated={(m) => {
+              setViewingMemo(m);
+              void loadMemos().then(setPastMemos);
+            }}
+          />
         </main>
       </div>
     );

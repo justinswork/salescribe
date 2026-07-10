@@ -114,6 +114,8 @@ function MemosPageContent() {
       const q = urlQuery.toLowerCase();
       result = result.filter((m) => {
         const haystack = [
+          m.seq != null ? `#${m.seq}` : null,
+          m.seq != null ? String(m.seq) : null,
           m.extraction.deal?.company,
           m.extraction.deal?.prospect_name,
           m.extraction.deal?.stated_problem,
@@ -254,7 +256,13 @@ function MemosPageContent() {
       <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
         {header}
         <main className="mx-auto max-w-3xl px-6 py-8 flex flex-col gap-6">
-          <MemoDetailView memo={selectedMemo} />
+          <MemoDetailView
+            memo={selectedMemo}
+            onUpdated={(m) => {
+              setSelectedMemo(m);
+              void loadMemos().then(setMemos);
+            }}
+          />
         </main>
       </div>
     );
@@ -345,6 +353,11 @@ function MemosPageContent() {
                   >
                     <div className="flex items-center justify-between gap-2 mb-2">
                       <div className="flex items-center gap-1.5 flex-wrap">
+                        {typeof m.seq === "number" && (
+                          <span className="font-mono text-[11px] font-semibold text-zinc-400 dark:text-zinc-500">
+                            #{m.seq}
+                          </span>
+                        )}
                         {m.is_demo && (
                           <span className="rounded-full bg-amber-100 dark:bg-amber-950/40 px-2 py-0.5 text-[10px] font-semibold text-amber-800 dark:text-amber-300 uppercase tracking-wide">
                             demo

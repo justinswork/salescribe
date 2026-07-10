@@ -72,6 +72,11 @@ export default function MemoHistory({
             >
               <div className="flex items-center justify-between gap-2 mb-2">
                 <div className="flex items-center gap-1.5 flex-wrap">
+                  {typeof m.seq === "number" && (
+                    <span className="font-mono text-[11px] font-semibold text-zinc-400 dark:text-zinc-500">
+                      #{m.seq}
+                    </span>
+                  )}
                   {m.is_demo && (
                     <span className="rounded-full bg-amber-100 dark:bg-amber-950/40 px-2 py-0.5 text-[10px] font-semibold text-amber-800 dark:text-amber-300 uppercase tracking-wide">
                       demo
