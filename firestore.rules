@@ -91,8 +91,18 @@ service cloud.firestore {
         allow create: if isMember(orgId)
           && request.resource.data.authorUid == request.auth.uid
           && request.resource.data.visibility in ['shared', 'private'];
-        allow update, delete: if isMember(orgId)
-          && resource.data.authorUid == request.auth.uid;
+        // The author can always edit/delete their own memo; an admin can edit/
+        // delete any SHARED memo (they can't read, so can't touch, private ones).
+        allow update, delete: if isMember(orgId) && (
+          resource.data.authorUid == request.auth.uid ||
+          (isAdmin(orgId) && resource.data.visibility == 'shared')
+        );
+      }
+
+      // Per-org counters (e.g. the memo sequence number). Any member may read
+      // and increment; the value is low-stakes and set in a client transaction.
+      match /counters/{name} {
+        allow read, write: if isMember(orgId);
       }
     }
 

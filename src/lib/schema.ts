@@ -271,12 +271,25 @@ export type Brief = {
 
 export type MemoVisibility = "shared" | "private";
 
+// One entry in a memo's edit history.
+export type MemoRevision = {
+  at: string;
+  byUid: string;
+  byName: string;
+  action: "created" | "edited";
+};
+
 export type Memo = {
   id: string;
   created_iso: string;
   transcript: string;
   extraction: Extraction;
   chat: ChatMessage[];
+  // User-facing, per-org sequential number (memo #1, #2, …), assigned at
+  // creation from an org counter. Optional so pre-numbering memos still load.
+  seq?: number;
+  // Append-only edit log: who created/edited the memo and when.
+  revisions?: MemoRevision[];
   // Team accounts: who recorded the memo, and whether the rest of the org can
   // see it. Optional so pre-team memos still typecheck; readers should treat a
   // missing visibility as "shared" and a missing authorUid as unknown.

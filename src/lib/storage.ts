@@ -17,15 +17,17 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   getDocs,
   query,
+  runTransaction,
   setDoc,
   where,
   writeBatch,
 } from "firebase/firestore";
 import { getAuthInstance, getDbInstance } from "./firebase";
 import { currentOrgId } from "./org";
-import type { Extraction, Memo, MemoVisibility } from "./schema";
+import type { Extraction, Memo, MemoRevision, MemoVisibility } from "./schema";
 
 const MAX_RELATED = 3;
 
@@ -63,17 +65,58 @@ export async function loadMemos(): Promise<Memo[]> {
   );
 }
 
-export async function saveMemo(memo: Memo): Promise<void> {
+function editorOf() {
   const user = requireUser();
-  // Stamp authorship + default visibility server-of-record fields here so every
-  // write path (record, re-extract, demo) is consistent.
+  return { uid: user.uid, name: user.displayName ?? user.email ?? "Teammate", user };
+}
+
+// Atomically claim the next per-org memo number. Runs in a transaction so
+// concurrent saves never collide on the same number.
+async function nextMemoSeq(): Promise<number> {
+  const db = getDbInstance();
+  const ref = doc(db, "orgs", currentOrgId(), "counters", "memos");
+  return runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    const next = (snap.exists() ? (snap.data().value as number) : 0) + 1;
+    tx.set(ref, { value: next }, { merge: true });
+    return next;
+  });
+}
+
+// Create a memo. Assigns a sequential number and seeds the revision log.
+export async function saveMemo(memo: Memo): Promise<Memo> {
+  const { uid, name } = editorOf();
+  const seq = memo.seq ?? (await nextMemoSeq());
   const toSave: Memo = {
     ...memo,
-    authorUid: memo.authorUid ?? user.uid,
-    authorName: memo.authorName ?? user.displayName ?? user.email ?? "Teammate",
+    authorUid: memo.authorUid ?? uid,
+    authorName: memo.authorName ?? name,
     visibility: memo.visibility ?? "shared",
+    seq,
+    revisions: memo.revisions ?? [
+      { at: new Date().toISOString(), byUid: uid, byName: name, action: "created" },
+    ],
   };
   await setDoc(doc(memosCollection(), memo.id), toSave);
+  return toSave;
+}
+
+// Overwrite a memo's contents (full edit) and append an "edited" revision.
+// The caller passes the whole updated memo, preserving seq/authorUid/created.
+export async function updateMemo(updated: Memo): Promise<Memo> {
+  const { uid, name } = editorOf();
+  const revision: MemoRevision = {
+    at: new Date().toISOString(),
+    byUid: uid,
+    byName: name,
+    action: "edited",
+  };
+  const toSave: Memo = {
+    ...updated,
+    revisions: [...(updated.revisions ?? []), revision],
+  };
+  await setDoc(doc(memosCollection(), updated.id), toSave);
+  return toSave;
 }
 
 export async function deleteMemo(id: string): Promise<void> {
@@ -140,22 +183,31 @@ export async function loadDemoData(): Promise<{ loaded: number; source: string }
       'No demo data file found. Run "npm run gen:demo" locally first to produce public/demo-data.json.',
     );
   }
-  const user = requireUser();
-  const authorName = user.displayName ?? user.email ?? "Teammate";
+  const { uid, name } = editorOf();
+  const db = getDbInstance();
   const col = memosCollection();
+  // Assign a contiguous block of sequence numbers off the current counter.
+  const counterRef = doc(db, "orgs", currentOrgId(), "counters", "memos");
+  const counterSnap = await getDoc(counterRef);
+  const base = counterSnap.exists() ? (counterSnap.data().value as number) : 0;
+  const now = new Date().toISOString();
+  const memos = found.data.memos!;
   // Firestore writeBatch caps at 500 operations — well above our ~88 memos.
-  const batch = writeBatch(getDbInstance());
-  for (const memo of found.data.memos!) {
+  const batch = writeBatch(db);
+  memos.forEach((memo, i) => {
     batch.set(doc(col, memo.id), {
       ...memo,
-      authorUid: user.uid,
-      authorName,
+      authorUid: uid,
+      authorName: name,
       visibility: "shared",
       is_demo: true,
+      seq: base + i + 1,
+      revisions: [{ at: now, byUid: uid, byName: name, action: "created" }],
     });
-  }
+  });
+  batch.set(counterRef, { value: base + memos.length }, { merge: true });
   await batch.commit();
-  return { loaded: found.data.memos!.length, source: found.source };
+  return { loaded: memos.length, source: found.source };
 }
 
 // Whether the caller has their own demo memos loaded. Scoped to the user's own

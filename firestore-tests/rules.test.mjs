@@ -169,6 +169,33 @@ await check("unfiltered query over all memos is denied", () =>
   assertFails(getDocs(memosCol(as("bob", "bob@acme.com")))),
 );
 
+// --- Memo editing ------------------------------------------------------------
+console.log("\nMemo editing");
+await testEnv.clearFirestore();
+await seed(async (db) => {
+  await setDoc(orgDoc(db), ORG_DATA);
+  await setDoc(memberDoc(db, "alice"), member("alice", "admin"));
+  await setDoc(memberDoc(db, "bob"), member("bob", "member"));
+  await setDoc(memberDoc(db, "carol"), member("carol", "member"));
+  await setDoc(memoDoc(db, "bobShared"), memo("bob", "shared"));
+  await setDoc(memoDoc(db, "bobPrivate"), memo("bob", "private"));
+});
+await check("author can edit their own memo", () =>
+  assertSucceeds(updateDoc(memoDoc(as("bob", "bob@acme.com"), "bobShared"), { transcript: "edited" })),
+);
+await check("admin can edit a shared memo they don't own", () =>
+  assertSucceeds(updateDoc(memoDoc(as("alice", "alice@acme.com"), "bobShared"), { transcript: "admin edit" })),
+);
+await check("admin cannot edit another's private memo", () =>
+  assertFails(updateDoc(memoDoc(as("alice", "alice@acme.com"), "bobPrivate"), { transcript: "nope" })),
+);
+await check("non-admin member cannot edit another's memo", () =>
+  assertFails(updateDoc(memoDoc(as("carol", "carol@acme.com"), "bobShared"), { transcript: "nope" })),
+);
+await check("member can read and bump the memo counter", () =>
+  assertSucceeds(setDoc(doc(as("bob", "bob@acme.com"), "orgs", ORG, "counters", "memos"), { value: 5 })),
+);
+
 // --- User profiles -----------------------------------------------------------
 console.log("\nProfiles");
 await testEnv.clearFirestore();
