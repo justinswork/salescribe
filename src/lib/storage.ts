@@ -24,7 +24,7 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import { getAuthInstance, getDbInstance } from "./firebase";
-import { orgIdForUser } from "./org";
+import { currentOrgId } from "./org";
 import type { Extraction, Memo, MemoVisibility } from "./schema";
 
 const MAX_RELATED = 3;
@@ -36,9 +36,10 @@ function requireUser() {
 }
 
 function memosCollection() {
-  const user = requireUser();
-  const { orgId } = orgIdForUser(user);
-  return collection(getDbInstance(), "orgs", orgId, "memos");
+  requireUser();
+  // Use the resolved org id (may differ from the email domain for invited
+  // users), not a fresh domain computation.
+  return collection(getDbInstance(), "orgs", currentOrgId(), "memos");
 }
 
 // Load everything this user is allowed to see: all shared memos across the

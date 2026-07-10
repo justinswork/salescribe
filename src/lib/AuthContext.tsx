@@ -12,7 +12,7 @@ import {
   User,
 } from "firebase/auth";
 import { getAuthInstance, googleProvider, microsoftProvider } from "./firebase";
-import { ensureOrg, type OrgContext } from "./org";
+import { resolveOrg, type OrgContext } from "./org";
 
 export type ProviderId = "google" | "microsoft";
 
@@ -26,6 +26,9 @@ type AuthState = {
   // waits on this before loading memos, since every memo path is org-scoped.
   org: OrgContext | null;
   orgLoading: boolean;
+  // Re-resolve the current user's org (after joining via invite, a role change,
+  // etc.) so the app reflects it without a full reload.
+  reloadOrg: () => Promise<void>;
   signIn: (provider?: ProviderId) => Promise<void>;
   signInWithEmail: (email: string, password: string) => Promise<void>;
   signUpWithEmail: (email: string, password: string) => Promise<void>;
@@ -44,6 +47,7 @@ const AuthContext = createContext<AuthState>({
   emailVerified: false,
   org: null,
   orgLoading: false,
+  reloadOrg: async () => {},
   signIn: async () => {},
   signInWithEmail: async () => {},
   signUpWithEmail: async () => {},
@@ -116,7 +120,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     (async () => {
       setOrgLoading(true);
       try {
-        const resolved = await ensureOrg(user);
+        const resolved = await resolveOrg(user);
         if (!cancelled) setOrg(resolved);
       } catch (e) {
         if (!cancelled) setAuthError(e instanceof Error ? e.message : String(e));
@@ -128,6 +132,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       cancelled = true;
     };
   }, [user, emailVerified]);
+
+  async function reloadOrg() {
+    const current = getAuthInstance().currentUser;
+    if (!current) return;
+    setOrg(await resolveOrg(current));
+  }
 
   async function signIn(providerId: ProviderId = "google") {
     setAuthError(null);
@@ -219,6 +229,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         emailVerified,
         org,
         orgLoading,
+        reloadOrg,
         signIn,
         signInWithEmail,
         signUpWithEmail,

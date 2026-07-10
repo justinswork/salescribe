@@ -314,3 +314,26 @@ export type OrgMember = {
   role: OrgRole;
   joined_iso: string;
 };
+
+// A pending invite for an off-domain teammate. Doc id is the invited email
+// (lowercased). Consumed via a join link; membership is gated on the invitee's
+// verified email matching. Invited users join as "member"; an admin can
+// promote them afterward.
+export type Invite = {
+  email: string;
+  invitedBy: string;
+  invitedByName: string;
+  created_iso: string;
+};
+
+// Per-user pointer to the one org a user belongs to. Needed once membership is
+// no longer purely domain-derived (an invited off-domain user's org differs
+// from their email domain), so we remember it across sign-ins. Stored at
+// users/{uid}, readable/writable only by that user.
+export type UserProfile = {
+  uid: string;
+  orgId: string;
+  role: OrgRole;
+  email: string;
+  displayName: string;
+};

@@ -169,6 +169,85 @@ await check("unfiltered query over all memos is denied", () =>
   assertFails(getDocs(memosCol(as("bob", "bob@acme.com")))),
 );
 
+// --- User profiles -----------------------------------------------------------
+console.log("\nProfiles");
+await testEnv.clearFirestore();
+await check("user can write their own profile", () =>
+  assertSucceeds(
+    setDoc(doc(as("alice", "alice@acme.com"), "users", "alice"), {
+      uid: "alice",
+      orgId: ORG,
+      role: "member",
+      email: "alice@acme.com",
+      displayName: "Alice",
+    }),
+  ),
+);
+await check("user cannot read another user's profile", () =>
+  assertFails(getDoc(doc(as("bob", "bob@acme.com"), "users", "alice"))),
+);
+
+// --- Invites -----------------------------------------------------------------
+console.log("\nInvites");
+await testEnv.clearFirestore();
+await seed(async (db) => {
+  await setDoc(orgDoc(db), ORG_DATA);
+  await setDoc(memberDoc(db, "alice"), member("alice", "admin"));
+  await setDoc(memberDoc(db, "bob"), member("bob", "member"));
+});
+const inviteDoc = (db, email) => doc(db, "orgs", ORG, "invites", email);
+const invite = (email) => ({ email, invitedBy: "alice", invitedByName: "Alice", created_iso: "x" });
+
+await check("admin can create an invite", () =>
+  assertSucceeds(setDoc(inviteDoc(as("alice", "alice@acme.com"), "dana@partner.com"), invite("dana@partner.com"))),
+);
+await check("member cannot create an invite", () =>
+  assertFails(setDoc(inviteDoc(as("bob", "bob@acme.com"), "eve@partner.com"), invite("eve@partner.com"))),
+);
+await check("invitee can read their own invite", () =>
+  assertSucceeds(getDoc(inviteDoc(as("dana", "dana@partner.com"), "dana@partner.com"))),
+);
+await check("outsider cannot read someone else's invite", () =>
+  assertFails(getDoc(inviteDoc(as("mallory", "mallory@evil.com"), "dana@partner.com"))),
+);
+await check("invited off-domain user cannot self-join as admin", () =>
+  assertFails(setDoc(memberDoc(as("dana", "dana@partner.com"), "dana"), member("dana", "admin"))),
+);
+await check("uninvited off-domain user cannot join", () =>
+  assertFails(setDoc(memberDoc(as("frank", "frank@partner.com"), "frank"), member("frank", "member"))),
+);
+await check("invited off-domain user can join as member", () =>
+  assertSucceeds(setDoc(memberDoc(as("dana", "dana@partner.com"), "dana"), member("dana", "member"))),
+);
+await check("invitee can consume (delete) their own invite", () =>
+  assertSucceeds(deleteDoc(inviteDoc(as("dana", "dana@partner.com"), "dana@partner.com"))),
+);
+
+// --- Admin management --------------------------------------------------------
+console.log("\nAdmin management");
+await testEnv.clearFirestore();
+await seed(async (db) => {
+  await setDoc(orgDoc(db), ORG_DATA);
+  await setDoc(memberDoc(db, "alice"), member("alice", "admin"));
+  await setDoc(memberDoc(db, "bob"), member("bob", "member"));
+  await setDoc(memberDoc(db, "carol"), member("carol", "member"));
+});
+await check("member cannot change another member's role", () =>
+  assertFails(updateDoc(memberDoc(as("bob", "bob@acme.com"), "alice"), { role: "member" })),
+);
+await check("member cannot rename the org", () =>
+  assertFails(updateDoc(orgDoc(as("bob", "bob@acme.com")), { name: "Bob Inc" })),
+);
+await check("admin can promote a member", () =>
+  assertSucceeds(updateDoc(memberDoc(as("alice", "alice@acme.com"), "bob"), { role: "admin" })),
+);
+await check("admin can remove a member", () =>
+  assertSucceeds(deleteDoc(memberDoc(as("alice", "alice@acme.com"), "carol"))),
+);
+await check("admin can rename the org", () =>
+  assertSucceeds(updateDoc(orgDoc(as("alice", "alice@acme.com")), { name: "Acme Corp" })),
+);
+
 // --- usage/ is server-only ---------------------------------------------------
 console.log("\nUsage counters (server-only)");
 await testEnv.clearFirestore();

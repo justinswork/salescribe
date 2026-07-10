@@ -19,8 +19,6 @@ service cloud.firestore {
     // A user may belong to an org iff it's their own personal org, or the org
     // id equals their verified email's domain. Company org ids ARE the
     // lowercased domain, so a full-match regex over the email is the check.
-    // The email + email_verified claims are trustworthy (minted by Firebase
-    // Auth), so this needs no server round-trip.
     function mayJoin(orgId) {
       return verified() && (
         orgId == 'personal-' + request.auth.uid ||
@@ -28,12 +26,23 @@ service cloud.firestore {
       );
     }
 
+    // There is a pending invite for the caller's email in this org.
+    function hasInvite(orgId) {
+      return verified() &&
+        exists(/databases/$(database)/documents/orgs/$(orgId)/invites/$(myEmail().lower()));
+    }
+
+    // Per-user profile: pointer to the one org the user belongs to. Only the
+    // user themselves reads/writes it; it grants no access on its own (all
+    // access is gated by membership docs below).
+    match /users/{uid} {
+      allow read, write: if request.auth.uid == uid;
+    }
+
     match /orgs/{orgId} {
-      // A prospective joiner must be able to read the org doc to discover
-      // whether it exists yet (the bootstrap read in ensureOrg happens before
-      // membership exists), so allow reads for members OR anyone eligible to
-      // join this org.
-      allow read: if isMember(orgId) || mayJoin(orgId);
+      // Members, eligible domain joiners, and invitees can read the org doc
+      // (the last two need it during the join/bootstrap flow).
+      allow read: if isMember(orgId) || mayJoin(orgId) || hasInvite(orgId);
       allow create: if mayJoin(orgId)
         && request.resource.data.createdBy == request.auth.uid;
       allow update: if isAdmin(orgId);
@@ -41,23 +50,34 @@ service cloud.firestore {
 
       match /members/{uid} {
         // You can always read your own membership record (needed during
-        // bootstrap, before you're a member); the rest of the roster is
-        // readable once you're in the org.
+        // bootstrap); the rest of the roster is readable once you're a member.
         allow read: if request.auth.uid == uid || isMember(orgId);
-        // Self-join only: your own uid, into an org you're allowed to join.
-        // You can take the 'admin' role only if you created the org; everyone
-        // else self-joins as 'member'.
-        allow create: if request.auth.uid == uid && mayJoin(orgId) && (
-          request.resource.data.role == 'member' ||
-          (request.resource.data.role == 'admin' &&
-            get(/databases/$(database)/documents/orgs/$(orgId)).data.createdBy == request.auth.uid)
+        // Self-join. Via domain: 'member', or 'admin' only if you created the
+        // org. Via a pending invite: 'member' only (admins promote afterward).
+        allow create: if request.auth.uid == uid && (
+          (mayJoin(orgId) && (
+            request.resource.data.role == 'member' ||
+            (request.resource.data.role == 'admin' &&
+              get(/databases/$(database)/documents/orgs/$(orgId)).data.createdBy == request.auth.uid)
+          ))
+          || (hasInvite(orgId) && request.resource.data.role == 'member')
         );
         // Admins manage the roster (including roles). You can update your own
-        // record but NOT change your own role — that would be self-promotion to
-        // admin. You can always remove yourself (leave the org).
+        // record but NOT change your own role (no self-promotion). You can
+        // always remove yourself (leave the org).
         allow update: if isAdmin(orgId) ||
           (request.auth.uid == uid && request.resource.data.role == resource.data.role);
         allow delete: if isAdmin(orgId) || request.auth.uid == uid;
+      }
+
+      // Pending invites, keyed by the invited email (lowercased). Admins manage
+      // them; a member can see the pending list; an invitee can read and
+      // consume (delete) their own.
+      match /invites/{emailKey} {
+        allow read: if isMember(orgId) || (verified() && emailKey == myEmail().lower());
+        allow create, update: if isAdmin(orgId)
+          && request.resource.data.email.lower() == emailKey;
+        allow delete: if isAdmin(orgId) || (verified() && emailKey == myEmail().lower());
       }
 
       match /memos/{memoId} {
@@ -82,8 +102,7 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    // Default-deny for everything else (including the retired per-user
-    // users/{uid}/memos path — team accounts start fresh under orgs/).
+    // Default-deny for everything else.
     match /{document=**} {
       allow read, write: if false;
     }
