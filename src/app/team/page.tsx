@@ -7,6 +7,7 @@ import AccountMenu from "@/components/AccountMenu";
 import ThemeToggle from "@/components/ThemeToggle";
 import Avatar from "@/components/Avatar";
 import { useAuth } from "@/lib/AuthContext";
+import { authedFetch, apiError } from "@/lib/api";
 import {
   listMembers,
   listInvites,
@@ -17,6 +18,8 @@ import {
   renameOrg,
 } from "@/lib/org";
 import type { Invite, OrgMember } from "@/lib/schema";
+
+type KeyStatus = { hasAnthropic: boolean; hasOpenai: boolean };
 
 export default function TeamPage() {
   return (
@@ -41,6 +44,12 @@ function TeamPageContent() {
   const [joinLink, setJoinLink] = useState("");
   const [copied, setCopied] = useState(false);
 
+  const [keyStatus, setKeyStatus] = useState<KeyStatus | null>(null);
+  const [anthropicKey, setAnthropicKey] = useState("");
+  const [openaiKey, setOpenaiKey] = useState("");
+  const [savingKeys, setSavingKeys] = useState(false);
+  const [keyNotice, setKeyNotice] = useState("");
+
   async function refresh() {
     if (!org) return;
     try {
@@ -59,9 +68,48 @@ function TeamPageContent() {
     void (async () => {
       setNameDraft(org.name);
       await refresh();
+      if (org.role === "admin") {
+        try {
+          const r = await authedFetch("/api/org/keys");
+          if (r.ok) setKeyStatus((await r.json()) as KeyStatus);
+        } catch {
+          // status is best-effort; the section still renders with inputs
+        }
+      }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [org?.id]);
+
+  function handleSaveKeys() {
+    void (async () => {
+      setSavingKeys(true);
+      setKeyNotice("");
+      setError("");
+      try {
+        const body: { anthropic?: string; openai?: string } = {};
+        if (anthropicKey.trim()) body.anthropic = anthropicKey.trim();
+        if (openaiKey.trim()) body.openai = openaiKey.trim();
+        if (Object.keys(body).length === 0) {
+          setKeyNotice("Enter a key to save.");
+          return;
+        }
+        const r = await authedFetch("/api/org/keys", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!r.ok) throw new Error(await apiError(r, "Saving keys failed"));
+        setKeyStatus((await r.json()) as KeyStatus);
+        setAnthropicKey("");
+        setOpenaiKey("");
+        setKeyNotice("Saved.");
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setSavingKeys(false);
+      }
+    })();
+  }
 
   async function withBusy(fn: () => Promise<void>) {
     setBusy(true);
@@ -326,7 +374,75 @@ function TeamPageContent() {
             )}
           </section>
         )}
+
+        {/* API keys (admins only) */}
+        {isAdmin && (
+          <section className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-4">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">
+              API keys
+            </h2>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-4">
+              Your organization supplies its own keys. Anthropic powers extraction, coaching, and briefings;
+              OpenAI (Whisper) powers transcription. Both are required for AI features to work. Keys are stored
+              securely and never shown again — leave a field blank to keep the current one.
+            </p>
+            <div className="flex flex-col gap-4">
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Anthropic API key</span>
+                  <KeyBadge state={keyStatus?.hasAnthropic} />
+                </div>
+                <input
+                  type="password"
+                  autoComplete="off"
+                  value={anthropicKey}
+                  onChange={(e) => setAnthropicKey(e.target.value)}
+                  placeholder={keyStatus?.hasAnthropic ? "configured — enter a new key to replace" : "sk-ant-…"}
+                  className="w-full rounded border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400"
+                />
+              </div>
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">OpenAI API key</span>
+                  <KeyBadge state={keyStatus?.hasOpenai} />
+                </div>
+                <input
+                  type="password"
+                  autoComplete="off"
+                  value={openaiKey}
+                  onChange={(e) => setOpenaiKey(e.target.value)}
+                  placeholder={keyStatus?.hasOpenai ? "configured — enter a new key to replace" : "sk-…"}
+                  className="w-full rounded border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400"
+                />
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={handleSaveKeys}
+                  disabled={savingKeys}
+                  className="rounded bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 px-4 py-2 text-sm font-medium disabled:opacity-50"
+                >
+                  {savingKeys ? "Saving…" : "Save keys"}
+                </button>
+                {keyNotice && <span className="text-sm text-green-700 dark:text-green-400">{keyNotice}</span>}
+              </div>
+            </div>
+          </section>
+        )}
       </main>
     </div>
+  );
+}
+
+function KeyBadge({ state }: { state: boolean | undefined }) {
+  if (state === undefined) return null;
+  return state ? (
+    <span className="rounded-full bg-green-100 dark:bg-green-950/40 px-2 py-0.5 text-[10px] font-semibold text-green-800 dark:text-green-300 uppercase tracking-wide">
+      Configured
+    </span>
+  ) : (
+    <span className="rounded-full bg-amber-100 dark:bg-amber-950/40 px-2 py-0.5 text-[10px] font-semibold text-amber-800 dark:text-amber-300 uppercase tracking-wide">
+      Not set
+    </span>
   );
 }
