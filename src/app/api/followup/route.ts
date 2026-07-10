@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
-import { getAnthropic, MODELS } from "@/lib/clients";
+import { MODELS } from "@/lib/clients";
 import { authorize } from "@/lib/auth";
+import { anthropicFor } from "@/lib/ai";
 import { recordUsage } from "@/lib/ratelimit";
 import { LIMITS } from "@/lib/limits";
 import { COACH_SYSTEM } from "@/lib/prompts";
@@ -34,6 +35,9 @@ function compactMemo(m: Memo): object {
 export async function POST(req: NextRequest) {
   const principal = await authorize(req);
   if (principal instanceof Response) return principal;
+
+  const anthropic = await anthropicFor(principal);
+  if (anthropic instanceof Response) return anthropic;
 
   const { transcript, extraction, chat, related_past_memos = [] } = (await req.json()) as Body;
 
@@ -113,7 +117,7 @@ ${dialogue}${pastBlock}
 
 Decide: is the note reasonably complete? If yes, set done=true. If no, choose question_type and ask the single most valuable follow-up.`;
 
-  const response = await getAnthropic().messages.create({
+  const response = await anthropic.messages.create({
     model: MODELS.coach,
     max_tokens: 512,
     system: COACH_SYSTEM,

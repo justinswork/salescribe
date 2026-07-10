@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
-import { getAnthropic, MODELS } from "@/lib/clients";
+import { MODELS } from "@/lib/clients";
 import { authorize } from "@/lib/auth";
+import { anthropicFor } from "@/lib/ai";
 import { recordUsage } from "@/lib/ratelimit";
 import { SAMPLE_GENERATOR_SYSTEM } from "@/lib/prompts";
 
@@ -12,8 +13,11 @@ export async function POST(req: NextRequest) {
   const principal = await authorize(req);
   if (principal instanceof Response) return principal;
 
+  const anthropic = await anthropicFor(principal);
+  if (anthropic instanceof Response) return anthropic;
+
   try {
-    const response = await getAnthropic().messages.create({
+    const response = await anthropic.messages.create({
       model: MODELS.extractor,
       max_tokens: 600,
       temperature: 1,

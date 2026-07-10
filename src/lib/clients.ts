@@ -51,6 +51,16 @@ export function getOpenAI(): OpenAI {
   return _openai;
 }
 
+// Per-call clients built from a caller-supplied key (used for bring-your-own-key
+// orgs). Not cached — each org's key gets its own client.
+export function newAnthropic(apiKey: string): Anthropic {
+  return new Anthropic({ apiKey });
+}
+
+export function newOpenAI(apiKey: string): OpenAI {
+  return new OpenAI({ apiKey });
+}
+
 export const MODELS = {
   extractor: "claude-sonnet-4-6",
   coach: "claude-sonnet-4-6",

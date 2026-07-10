@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
-import { getAnthropic, MODELS } from "@/lib/clients";
+import { MODELS } from "@/lib/clients";
 import { authorize } from "@/lib/auth";
+import { anthropicFor } from "@/lib/ai";
 import { recordUsage } from "@/lib/ratelimit";
 import { LIMITS } from "@/lib/limits";
 import { BRIEFER_SYSTEM } from "@/lib/prompts";
@@ -36,6 +37,9 @@ function compactMemo(m: Memo) {
 export async function POST(req: NextRequest) {
   const principal = await authorize(req);
   if (principal instanceof Response) return principal;
+
+  const anthropic = await anthropicFor(principal);
+  if (anthropic instanceof Response) return anthropic;
 
   try {
     const { company, memos } = (await req.json()) as Body;
@@ -81,7 +85,7 @@ ${payloadJson}
 
 Trace the arc chronologically (oldest first), identify what matters, and call submit_brief.`;
 
-    const response = await getAnthropic().messages.create({
+    const response = await anthropic.messages.create({
       model: MODELS.extractor,
       max_tokens: 2048,
       system: BRIEFER_SYSTEM,

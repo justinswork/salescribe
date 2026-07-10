@@ -285,6 +285,20 @@ await check("client cannot write usage counters", () =>
   assertFails(setDoc(doc(as("alice", "alice@acme.com"), "usage", "alice"), { dayCount: 0 })),
 );
 
+// --- Org secrets (server-only API keys) --------------------------------------
+console.log("\nOrg secrets (server-only)");
+await testEnv.clearFirestore();
+await seed(async (db) => {
+  await setDoc(orgDoc(db), ORG_DATA);
+  await setDoc(memberDoc(db, "alice"), member("alice", "admin"));
+});
+await check("even an admin cannot read org secrets from the client", () =>
+  assertFails(getDoc(doc(as("alice", "alice@acme.com"), "orgs", ORG, "private", "keys"))),
+);
+await check("even an admin cannot write org secrets from the client", () =>
+  assertFails(setDoc(doc(as("alice", "alice@acme.com"), "orgs", ORG, "private", "keys"), { anthropic: "x" })),
+);
+
 await testEnv.cleanup();
 
 const total = passed + failures.length;

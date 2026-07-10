@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
-import { getOpenAI, MODELS } from "@/lib/clients";
+import { MODELS } from "@/lib/clients";
 import { authorize } from "@/lib/auth";
+import { openaiFor } from "@/lib/ai";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,6 +11,9 @@ export async function POST(req: NextRequest) {
   const principal = await authorize(req);
   if (principal instanceof Response) return principal;
 
+  const openai = await openaiFor(principal);
+  if (openai instanceof Response) return openai;
+
   try {
     const formData = await req.formData();
     const audio = formData.get("audio");
@@ -18,7 +22,7 @@ export async function POST(req: NextRequest) {
       return Response.json({ error: "Missing audio file in form field 'audio'." }, { status: 400 });
     }
 
-    const result = await getOpenAI().audio.transcriptions.create({
+    const result = await openai.audio.transcriptions.create({
       file: audio,
       model: MODELS.whisper,
       response_format: "json",

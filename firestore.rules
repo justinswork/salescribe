@@ -104,6 +104,12 @@ service cloud.firestore {
       match /counters/{name} {
         allow read, write: if isMember(orgId);
       }
+
+      // Per-org secrets (bring-your-own-key API keys). Server-only: the Admin
+      // SDK bypasses rules to read/write these; clients get no access.
+      match /private/{doc} {
+        allow read, write: if false;
+      }
     }
 
     // Per-user rate-limit + usage counters. Written ONLY by the server via the
