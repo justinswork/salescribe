@@ -8,6 +8,8 @@ import AccountMenu from "@/components/AccountMenu";
 import ThemeToggle from "@/components/ThemeToggle";
 import HandsFreeToggle from "@/components/HandsFreeToggle";
 import MemoDetailView from "@/components/MemoDetailView";
+import Avatar from "@/components/Avatar";
+import VisibilityPill from "@/components/VisibilityPill";
 import { useAuth } from "@/lib/AuthContext";
 import { loadMemos } from "@/lib/storage";
 import type { Memo } from "@/lib/schema";
@@ -339,30 +341,48 @@ function MemosPageContent() {
                 {visible.map((m) => (
                   <li
                     key={m.id}
-                    className="rounded border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 hover:bg-zinc-50 dark:hover:bg-zinc-900"
+                    className="rounded border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 hover:bg-zinc-50 dark:hover:bg-zinc-900 p-3"
                   >
-                    <button
-                      type="button"
-                      onClick={() => setSelectedMemo(m)}
-                      className="w-full flex items-start justify-between gap-3 p-3 text-left text-sm"
-                    >
-                      <div className="flex-1 min-w-0">
-                        <div className="font-medium text-zinc-900 dark:text-zinc-100 truncate flex items-center gap-2">
-                          <span className="truncate">{memoLabel(m)}</span>
-                          {m.is_demo && (
-                            <span className="shrink-0 rounded-full bg-amber-100 dark:bg-amber-950/40 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800 dark:text-amber-300 uppercase tracking-wide">
-                              demo
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5 line-clamp-1">
-                          {m.extraction.summary}
-                        </div>
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {m.is_demo && (
+                          <span className="rounded-full bg-amber-100 dark:bg-amber-950/40 px-2 py-0.5 text-[10px] font-semibold text-amber-800 dark:text-amber-300 uppercase tracking-wide">
+                            demo
+                          </span>
+                        )}
+                        <VisibilityPill visibility={m.visibility} />
                       </div>
                       <span className="text-xs text-zinc-400 dark:text-zinc-500 tabular-nums shrink-0">
                         {formatDate(m.created_iso)}
                       </span>
-                    </button>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedMemo(m)}
+                        className="flex-1 min-w-0 text-left text-sm"
+                      >
+                        <div className="font-medium text-zinc-900 dark:text-zinc-100 truncate">
+                          {memoLabel(m)}
+                        </div>
+                        <div className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5 line-clamp-1">
+                          {m.extraction.summary}
+                        </div>
+                      </button>
+                      {(() => {
+                        const mine = Boolean(m.authorUid && m.authorUid === user?.uid);
+                        const authorName = m.authorName || "Teammate";
+                        return (
+                          <Avatar
+                            size={36}
+                            name={authorName}
+                            seed={m.authorUid || authorName}
+                            label={mine ? "You" : authorName}
+                            photoURL={mine ? user?.photoURL : undefined}
+                          />
+                        );
+                      })()}
+                    </div>
                   </li>
                 ))}
               </ul>

@@ -1,6 +1,7 @@
 "use client";
 
 import ExtractionView from "@/components/ExtractionView";
+import VisibilityPill from "@/components/VisibilityPill";
 import type { Memo } from "@/lib/schema";
 
 // The "what's inside a memo" view: timestamp + DEMO pill (if applicable) +
@@ -11,8 +12,12 @@ import type { Memo } from "@/lib/schema";
 export default function MemoDetailView({ memo }: { memo: Memo }) {
   return (
     <>
-      <div className="text-sm text-zinc-500 dark:text-zinc-400 flex items-center gap-2">
+      <div className="text-sm text-zinc-500 dark:text-zinc-400 flex flex-wrap items-center gap-2">
         <span>Recorded {new Date(memo.created_iso).toLocaleString()}</span>
+        {memo.authorName && (
+          <span className="text-xs text-zinc-400 dark:text-zinc-500">· {memo.authorName}</span>
+        )}
+        <VisibilityPill visibility={memo.visibility} />
         {memo.is_demo && (
           <span className="rounded-full bg-amber-100 dark:bg-amber-950/40 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800 dark:text-amber-300 uppercase tracking-wide">
             demo

@@ -2,21 +2,84 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Each user can read/write only their own memos subtree.
-    // Memo IDs are client-generated UUIDs; no listing across users.
-    match /users/{uid}/memos/{memoId} {
-      allow read, write, delete: if request.auth != null && request.auth.uid == uid;
+
+    function signedIn() { return request.auth != null; }
+    function verified() { return signedIn() && request.auth.token.email_verified == true; }
+    function myEmail() { return request.auth.token.email; }
+
+    function isMember(orgId) {
+      return signedIn() &&
+        exists(/databases/$(database)/documents/orgs/$(orgId)/members/$(request.auth.uid));
+    }
+    function isAdmin(orgId) {
+      return isMember(orgId) &&
+        get(/databases/$(database)/documents/orgs/$(orgId)/members/$(request.auth.uid)).data.role == 'admin';
     }
 
-    // Per-user rate-limit + usage counters (usage/{uid}). Written ONLY by the
-    // server via the Admin SDK, which bypasses these rules. Clients must never
-    // read or tamper with their own quota — explicit deny (redundant with the
-    // default-deny below, but stated so the intent is obvious).
+    // A user may belong to an org iff it's their own personal org, or the org
+    // id equals their verified email's domain. Company org ids ARE the
+    // lowercased domain, so a full-match regex over the email is the check.
+    // The email + email_verified claims are trustworthy (minted by Firebase
+    // Auth), so this needs no server round-trip.
+    function mayJoin(orgId) {
+      return verified() && (
+        orgId == 'personal-' + request.auth.uid ||
+        myEmail().lower().matches('.*@' + orgId)
+      );
+    }
+
+    match /orgs/{orgId} {
+      // A prospective joiner must be able to read the org doc to discover
+      // whether it exists yet (the bootstrap read in ensureOrg happens before
+      // membership exists), so allow reads for members OR anyone eligible to
+      // join this org.
+      allow read: if isMember(orgId) || mayJoin(orgId);
+      allow create: if mayJoin(orgId)
+        && request.resource.data.createdBy == request.auth.uid;
+      allow update: if isAdmin(orgId);
+      allow delete: if false;
+
+      match /members/{uid} {
+        // You can always read your own membership record (needed during
+        // bootstrap, before you're a member); the rest of the roster is
+        // readable once you're in the org.
+        allow read: if request.auth.uid == uid || isMember(orgId);
+        // Self-join only: your own uid, into an org you're allowed to join.
+        // You can take the 'admin' role only if you created the org; everyone
+        // else self-joins as 'member'.
+        allow create: if request.auth.uid == uid && mayJoin(orgId) && (
+          request.resource.data.role == 'member' ||
+          (request.resource.data.role == 'admin' &&
+            get(/databases/$(database)/documents/orgs/$(orgId)).data.createdBy == request.auth.uid)
+        );
+        // Admins manage the roster; anyone can update/remove their own record.
+        allow update, delete: if isAdmin(orgId) || request.auth.uid == uid;
+      }
+
+      match /memos/{memoId} {
+        // Shared memos are readable by any member; private memos only by their
+        // author. This is the hard privacy boundary — a teammate can't even
+        // read a private memo, so it can never leak into a shared briefing.
+        allow read: if isMember(orgId) && (
+          resource.data.visibility == 'shared' ||
+          resource.data.authorUid == request.auth.uid
+        );
+        allow create: if isMember(orgId)
+          && request.resource.data.authorUid == request.auth.uid
+          && request.resource.data.visibility in ['shared', 'private'];
+        allow update, delete: if isMember(orgId)
+          && resource.data.authorUid == request.auth.uid;
+      }
+    }
+
+    // Per-user rate-limit + usage counters. Written ONLY by the server via the
+    // Admin SDK, which bypasses these rules. Clients get no access.
     match /usage/{uid} {
       allow read, write: if false;
     }
 
-    // Default-deny for everything else.
+    // Default-deny for everything else (including the retired per-user
+    // users/{uid}/memos path — team accounts start fresh under orgs/).
     match /{document=**} {
       allow read, write: if false;
     }

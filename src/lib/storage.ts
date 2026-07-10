@@ -1,51 +1,88 @@
 "use client";
 
-// Per-user memo persistence + retrieval via Firestore.
+// Org-scoped memo persistence + retrieval via Firestore.
 //
-// Memos live at users/{uid}/memos/{memoId}. Security rules (firestore.rules)
-// enforce that only the signed-in owner can read/write their subtree.
+// Memos live at orgs/{orgId}/memos/{memoId}. Every member of the org can read
+// a memo unless it's marked visibility:"private", in which case only its
+// author can. Security rules (firestore.rules) enforce both the org boundary
+// and the private/shared split — a teammate literally cannot read a private
+// memo, so it can never surface in a shared briefing.
 //
 // Retrieval is intentionally simple: extract company hints from the current
-// memo, substring-match against past memos. Vector embeddings would be a fine
-// upgrade later, but for tens-to-hundreds of memos a salesperson would
-// realistically accumulate, naive matching is honest and debuggable.
+// memo, substring-match against the loaded memos. Now that the pool spans the
+// whole team, vector retrieval is a stronger eventual upgrade — but naive
+// matching stays honest and debuggable for a first cut.
 
 import {
   collection,
   deleteDoc,
   doc,
   getDocs,
-  orderBy,
   query,
   setDoc,
   where,
   writeBatch,
 } from "firebase/firestore";
 import { getAuthInstance, getDbInstance } from "./firebase";
-import type { Extraction, Memo } from "./schema";
+import { orgIdForUser } from "./org";
+import type { Extraction, Memo, MemoVisibility } from "./schema";
 
 const MAX_RELATED = 3;
 
-function memosCollection() {
-  const uid = getAuthInstance().currentUser?.uid;
-  if (!uid) throw new Error("Not signed in");
-  return collection(getDbInstance(), "users", uid, "memos");
+function requireUser() {
+  const user = getAuthInstance().currentUser;
+  if (!user) throw new Error("Not signed in");
+  return user;
 }
 
+function memosCollection() {
+  const user = requireUser();
+  const { orgId } = orgIdForUser(user);
+  return collection(getDbInstance(), "orgs", orgId, "memos");
+}
+
+// Load everything this user is allowed to see: all shared memos across the
+// team, plus their own (which includes their private ones). Two single-field
+// queries merged client-side — avoids the composite index an OR query would
+// need, and each query only returns docs the rules already permit.
 export async function loadMemos(): Promise<Memo[]> {
-  const uid = getAuthInstance().currentUser?.uid;
-  if (!uid) return [];
-  const q = query(memosCollection(), orderBy("created_iso", "desc"));
-  const snap = await getDocs(q);
-  return snap.docs.map((d) => d.data() as Memo);
+  const user = getAuthInstance().currentUser;
+  if (!user) return [];
+  const col = memosCollection();
+  const [sharedSnap, mineSnap] = await Promise.all([
+    getDocs(query(col, where("visibility", "==", "shared"))),
+    getDocs(query(col, where("authorUid", "==", user.uid))),
+  ]);
+  const byId = new Map<string, Memo>();
+  for (const d of [...sharedSnap.docs, ...mineSnap.docs]) {
+    byId.set(d.id, d.data() as Memo);
+  }
+  return Array.from(byId.values()).sort((a, b) =>
+    b.created_iso.localeCompare(a.created_iso),
+  );
 }
 
 export async function saveMemo(memo: Memo): Promise<void> {
-  await setDoc(doc(memosCollection(), memo.id), memo);
+  const user = requireUser();
+  // Stamp authorship + default visibility server-of-record fields here so every
+  // write path (record, re-extract, demo) is consistent.
+  const toSave: Memo = {
+    ...memo,
+    authorUid: memo.authorUid ?? user.uid,
+    authorName: memo.authorName ?? user.displayName ?? user.email ?? "Teammate",
+    visibility: memo.visibility ?? "shared",
+  };
+  await setDoc(doc(memosCollection(), memo.id), toSave);
 }
 
 export async function deleteMemo(id: string): Promise<void> {
   await deleteDoc(doc(memosCollection(), id));
+}
+
+// Flip a memo between shared and private after the fact. Rules only permit this
+// for the memo's author.
+export async function setMemoVisibility(id: string, visibility: MemoVisibility): Promise<void> {
+  await setDoc(doc(memosCollection(), id), { visibility }, { merge: true });
 }
 
 export function newMemoId(): string {
@@ -68,19 +105,16 @@ function companyHintsFor(ex: Extraction): string[] {
 
 // -------------------------------------------------------------------------
 // Demo data: load a pre-generated set of fictional memos into the signed-in
-// user's Firestore subtree so a grader (or curious user) can immediately
-// exercise features that need a populated memo history — like cross-document
-// briefings. The JSON file ships as a static asset under /public.
+// user's org so features that need a populated history (like cross-document
+// briefings) can be exercised immediately. The JSON ships as a static asset.
 //
-// Each loaded memo is tagged with is_demo=true (the field is baked into the
-// JSON by the generator script) so clearDemoData() can find and remove
-// exactly the demo records without touching real memos the user dictated.
+// Demo memos are stamped is_demo=true and authored by the loading user so
+// clearDemoData() can remove exactly the caller's own demo records without
+// touching real memos or a teammate's data.
 // -------------------------------------------------------------------------
 
 type DemoDataFile = { memos?: Memo[] };
 
-// Try the full dataset first, fall back to the sample file from a test run.
-// Returns null if neither is present.
 async function fetchDemoDataFile(): Promise<{ data: DemoDataFile; source: string } | null> {
   const candidates = ["/demo-data.json", "/demo-data-sample.json"];
   for (const url of candidates) {
@@ -105,37 +139,47 @@ export async function loadDemoData(): Promise<{ loaded: number; source: string }
       'No demo data file found. Run "npm run gen:demo" locally first to produce public/demo-data.json.',
     );
   }
+  const user = requireUser();
+  const authorName = user.displayName ?? user.email ?? "Teammate";
   const col = memosCollection();
   // Firestore writeBatch caps at 500 operations — well above our ~88 memos.
   const batch = writeBatch(getDbInstance());
   for (const memo of found.data.memos!) {
-    // Belt-and-suspenders: ensure is_demo is true even if a generated file
-    // somehow shipped without the flag.
-    batch.set(doc(col, memo.id), { ...memo, is_demo: true });
+    batch.set(doc(col, memo.id), {
+      ...memo,
+      authorUid: user.uid,
+      authorName,
+      visibility: "shared",
+      is_demo: true,
+    });
   }
   await batch.commit();
   return { loaded: found.data.memos!.length, source: found.source };
 }
 
-// Quick existence check so the UI can vary "Load demo data" copy based on
-// whether demo memos are already in the account. Returns true if at least one
-// memo flagged is_demo=true exists for the signed-in user.
-export async function hasDemoData(): Promise<boolean> {
-  const col = memosCollection();
-  const q = query(col, where("is_demo", "==", true));
+// Whether the caller has their own demo memos loaded. Scoped to the user's own
+// authored memos (delete requires authorship) so it never reports or removes a
+// teammate's demo data.
+async function myDemoMemos(uid: string) {
+  const q = query(memosCollection(), where("authorUid", "==", uid));
   const snap = await getDocs(q);
-  return !snap.empty;
+  return snap.docs.filter((d) => (d.data() as Memo).is_demo === true);
+}
+
+export async function hasDemoData(): Promise<boolean> {
+  const user = getAuthInstance().currentUser;
+  if (!user) return false;
+  return (await myDemoMemos(user.uid)).length > 0;
 }
 
 export async function clearDemoData(): Promise<{ deleted: number }> {
-  const col = memosCollection();
-  const q = query(col, where("is_demo", "==", true));
-  const snap = await getDocs(q);
-  if (snap.empty) return { deleted: 0 };
+  const user = requireUser();
+  const demos = await myDemoMemos(user.uid);
+  if (demos.length === 0) return { deleted: 0 };
   const batch = writeBatch(getDbInstance());
-  snap.docs.forEach((d) => batch.delete(d.ref));
+  demos.forEach((d) => batch.delete(d.ref));
   await batch.commit();
-  return { deleted: snap.size };
+  return { deleted: demos.length };
 }
 
 // Find every memo that mentions a given company name (case-insensitive

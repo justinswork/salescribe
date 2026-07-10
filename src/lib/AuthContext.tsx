@@ -12,6 +12,7 @@ import {
   User,
 } from "firebase/auth";
 import { getAuthInstance, googleProvider, microsoftProvider } from "./firebase";
+import { ensureOrg, type OrgContext } from "./org";
 
 export type ProviderId = "google" | "microsoft";
 
@@ -21,6 +22,10 @@ type AuthState = {
   // Whether the signed-in user's email is confirmed. Always true for Google /
   // Microsoft users; gates access for email/password users until they verify.
   emailVerified: boolean;
+  // The signed-in user's organization (team). Null until resolved; the app
+  // waits on this before loading memos, since every memo path is org-scoped.
+  org: OrgContext | null;
+  orgLoading: boolean;
   signIn: (provider?: ProviderId) => Promise<void>;
   signInWithEmail: (email: string, password: string) => Promise<void>;
   signUpWithEmail: (email: string, password: string) => Promise<void>;
@@ -37,6 +42,8 @@ const AuthContext = createContext<AuthState>({
   user: null,
   loading: true,
   emailVerified: false,
+  org: null,
+  orgLoading: false,
   signIn: async () => {},
   signInWithEmail: async () => {},
   signUpWithEmail: async () => {},
@@ -85,14 +92,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [emailVerified, setEmailVerified] = useState(false);
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [org, setOrg] = useState<OrgContext | null>(null);
+  const [orgLoading, setOrgLoading] = useState(false);
 
   useEffect(() => {
     return onAuthStateChanged(getAuthInstance(), (u) => {
       setUser(u);
       setEmailVerified(u?.emailVerified ?? false);
+      // Clear org membership on sign-out; the effect below re-resolves it when
+      // a verified user is present.
+      if (!u) setOrg(null);
       setLoading(false);
     });
   }, []);
+
+  // Resolve (and lazily create) the user's org once their email is verified.
+  // Runs on sign-in and whenever verification flips true. Every memo path is
+  // org-scoped, so the app gates on `org` being populated. The work is wrapped
+  // in an async task so no state is set synchronously during the effect.
+  useEffect(() => {
+    if (!user || !emailVerified) return;
+    let cancelled = false;
+    (async () => {
+      setOrgLoading(true);
+      try {
+        const resolved = await ensureOrg(user);
+        if (!cancelled) setOrg(resolved);
+      } catch (e) {
+        if (!cancelled) setAuthError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (!cancelled) setOrgLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user, emailVerified]);
 
   async function signIn(providerId: ProviderId = "google") {
     setAuthError(null);
@@ -182,6 +217,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user,
         loading,
         emailVerified,
+        org,
+        orgLoading,
         signIn,
         signInWithEmail,
         signUpWithEmail,

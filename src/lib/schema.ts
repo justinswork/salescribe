@@ -269,13 +269,48 @@ export type Brief = {
   }>;
 };
 
+export type MemoVisibility = "shared" | "private";
+
 export type Memo = {
   id: string;
   created_iso: string;
   transcript: string;
   extraction: Extraction;
   chat: ChatMessage[];
+  // Team accounts: who recorded the memo, and whether the rest of the org can
+  // see it. Optional so pre-team memos still typecheck; readers should treat a
+  // missing visibility as "shared" and a missing authorUid as unknown.
+  authorUid?: string;
+  authorName?: string;
+  visibility?: MemoVisibility;
   // Flag set by the demo-data loader so a "Clear demo data" action can find
   // every fictional memo and delete just those, leaving real ones alone.
   is_demo?: boolean;
+};
+
+// -------------------------------------------------------------------------
+// Organizations (team accounts). A memo lives under orgs/{orgId}/memos and is
+// visible to every member of that org unless marked private. See src/lib/org.ts
+// for how a user resolves to an org, and firestore.rules for enforcement.
+// -------------------------------------------------------------------------
+
+export type OrgRole = "admin" | "member";
+
+export type Org = {
+  id: string;
+  name: string;
+  // The email domain this org owns (e.g. "vibrationresearch.com"). null for a
+  // personal org backing a single webmail user.
+  domain: string | null;
+  personal: boolean;
+  createdBy: string;
+  created_iso: string;
+};
+
+export type OrgMember = {
+  uid: string;
+  email: string;
+  displayName: string;
+  role: OrgRole;
+  joined_iso: string;
 };

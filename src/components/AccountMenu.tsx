@@ -5,7 +5,7 @@ import { useAuth } from "@/lib/AuthContext";
 import { clearDemoData, hasDemoData, loadDemoData } from "@/lib/storage";
 
 export default function AccountMenu() {
-  const { user, signOut } = useAuth();
+  const { user, org, signOut } = useAuth();
   const [open, setOpen] = useState(false);
   const [demoBusy, setDemoBusy] = useState(false);
   // null = haven't checked yet (treat as "still loading" in UI).
@@ -137,6 +137,14 @@ export default function AccountMenu() {
             <div className="px-3 py-2 text-zinc-700 dark:text-zinc-200">
               <div className="font-medium truncate">{user.displayName || "Signed in"}</div>
               <div className="text-xs text-zinc-500 dark:text-zinc-400 truncate">{user.email}</div>
+              {org && (
+                <div className="mt-1.5 flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
+                  <span className="truncate font-medium text-zinc-700 dark:text-zinc-300">{org.name}</span>
+                  <span className="shrink-0 rounded-full bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 text-[10px] uppercase tracking-wide">
+                    {org.role}
+                  </span>
+                </div>
+              )}
             </div>
             <div className="border-t border-zinc-200 dark:border-zinc-800" />
             <button

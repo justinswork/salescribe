@@ -15,11 +15,12 @@ import { useAuth } from "@/lib/AuthContext";
 import { useHandsFree } from "@/lib/HandsFreeContext";
 import { cancelSpeech, listenForReply, speak, type ListenHandle } from "@/lib/speech";
 import { authedFetch, apiError } from "@/lib/api";
-import type { Brief, ChatMessage, Extraction, FollowupResult, Memo } from "@/lib/schema";
+import type { Brief, ChatMessage, Extraction, FollowupResult, Memo, MemoVisibility } from "@/lib/schema";
 import {
   loadMemos,
   saveMemo,
   deleteMemo,
+  setMemoVisibility,
   newMemoId,
   findRelatedMemos,
   findMemosByCompany,
@@ -35,6 +36,44 @@ export default function Home() {
     <AuthGuard>
       <SalescribeApp />
     </AuthGuard>
+  );
+}
+
+// Shared / Private selector, used both while a memo is being finalized and on
+// the saved-memo card so visibility is always visible and always changeable.
+function VisibilityToggle({
+  value,
+  onChange,
+}: {
+  value: MemoVisibility;
+  onChange: (v: MemoVisibility) => void;
+}) {
+  return (
+    <div className="flex items-center gap-2 text-xs">
+      <span className="text-zinc-500 dark:text-zinc-400">Visibility:</span>
+      <button
+        type="button"
+        onClick={() => onChange("shared")}
+        className={`rounded px-2.5 py-1 ${
+          value === "shared"
+            ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
+            : "border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400"
+        }`}
+      >
+        Shared
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange("private")}
+        className={`rounded px-2.5 py-1 ${
+          value === "private"
+            ? "bg-amber-600 text-white"
+            : "border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400"
+        }`}
+      >
+        Private
+      </button>
+    </div>
   );
 }
 
@@ -59,6 +98,9 @@ function SalescribeApp() {
   const [currentMemoId, setCurrentMemoId] = useState<string>("");
   const [viewingMemo, setViewingMemo] = useState<Memo | null>(null);
   const [sampleLoading, setSampleLoading] = useState(false);
+  // Visibility chosen for the memo currently being recorded. Shared by default
+  // — the whole point of team accounts — with a per-memo private opt-out.
+  const [visibility, setVisibility] = useState<MemoVisibility>("shared");
 
   // Briefing state: when briefingCompany is non-empty, the main content area
   // renders the BriefView (or its loading/error state) instead of the normal
@@ -68,6 +110,8 @@ function SalescribeApp() {
   // the pre-meeting briefings picker. Stored locally; doesn't need to persist
   // across reloads (a refresh always lands on Memos).
   const [homeTab, setHomeTab] = useState<"memos" | "briefings">("memos");
+  // Team feed filter: everyone's shared memos vs. only the ones you authored.
+  const [homeMemoFilter, setHomeMemoFilter] = useState<"all" | "mine">("all");
 
   const [briefingCompany, setBriefingCompany] = useState<string>("");
   const [briefingMemoCount, setBriefingMemoCount] = useState(0);
@@ -125,6 +169,7 @@ function SalescribeApp() {
     setCurrentMemoId("");
     setViewingMemo(null);
     setLiveTranscript("");
+    setVisibility("shared");
   }
 
   // On unmount, kill any in-flight speech or listening so the user doesn't get
@@ -206,6 +251,7 @@ function SalescribeApp() {
       transcript,
       extraction: finalExtraction,
       chat: finalChat,
+      visibility,
     };
     await saveMemo(memo);
     const fresh = await loadMemos();
@@ -325,6 +371,21 @@ function SalescribeApp() {
     setCurrentQuestionType("none");
     setStatus("done");
     await persistCurrent(extraction, chat);
+  }
+
+  // Set the current memo's visibility. Before the memo is saved this just
+  // records the choice (applied at save time); after it's saved it persists
+  // the change and refreshes the list so the badge updates.
+  async function changeVisibility(next: MemoVisibility) {
+    setVisibility(next);
+    if (status === "done" && currentMemoId) {
+      try {
+        await setMemoVisibility(currentMemoId, next);
+        setPastMemos(await loadMemos());
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      }
+    }
   }
 
   function openMemo(m: Memo) {
@@ -793,7 +854,43 @@ function SalescribeApp() {
                   </div>
 
                   {homeTab === "memos" && (
-                    <MemoHistory memos={pastMemos} onOpen={openMemo} onDelete={handleDelete} />
+                    <div className="flex flex-col gap-2">
+                      <div className="flex gap-2 text-xs">
+                        <button
+                          type="button"
+                          onClick={() => setHomeMemoFilter("all")}
+                          className={`rounded px-2.5 py-1 ${
+                            homeMemoFilter === "all"
+                              ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
+                              : "border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400"
+                          }`}
+                        >
+                          All team
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setHomeMemoFilter("mine")}
+                          className={`rounded px-2.5 py-1 ${
+                            homeMemoFilter === "mine"
+                              ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
+                              : "border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400"
+                          }`}
+                        >
+                          Just mine
+                        </button>
+                      </div>
+                      <MemoHistory
+                        memos={
+                          homeMemoFilter === "mine"
+                            ? pastMemos.filter((m) => m.authorUid === user?.uid)
+                            : pastMemos
+                        }
+                        onOpen={openMemo}
+                        onDelete={handleDelete}
+                        currentUid={user?.uid}
+                        currentPhotoURL={user?.photoURL}
+                      />
+                    </div>
                   )}
 
                   {homeTab === "briefings" && (
@@ -901,27 +998,33 @@ function SalescribeApp() {
           >
             {status === "done" ? (
               <>
-                <div className="text-sm text-green-800 dark:text-green-200 flex items-center gap-2">
-                  <span aria-hidden="true">✓</span>
-                  <span>Saved to your memo history.</span>
+                <div className="flex flex-col gap-2">
+                  <div className="text-sm text-green-800 dark:text-green-200 flex items-center gap-2">
+                    <span aria-hidden="true">✓</span>
+                    <span>Saved to your memo history.</span>
+                  </div>
+                  <VisibilityToggle value={visibility} onChange={changeVisibility} />
                 </div>
                 <button
                   type="button"
                   onClick={reset}
-                  className="rounded bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 px-4 py-2 text-sm font-medium"
+                  className="rounded bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 px-4 py-2 text-sm font-medium shrink-0"
                 >
                   Start new memo
                 </button>
               </>
             ) : (
               <>
-                <div className="text-sm text-zinc-700 dark:text-zinc-300">
-                  Not saved yet — answer the coach below or finish now.
+                <div className="flex flex-col gap-2">
+                  <div className="text-sm text-zinc-700 dark:text-zinc-300">
+                    Not saved yet — answer the coach below or finish now.
+                  </div>
+                  <VisibilityToggle value={visibility} onChange={changeVisibility} />
                 </div>
                 <button
                   type="button"
                   onClick={finalizeNow}
-                  className="rounded bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 px-4 py-2 text-sm font-medium"
+                  className="rounded bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 px-4 py-2 text-sm font-medium shrink-0"
                 >
                   Save and finish
                 </button>
