@@ -52,8 +52,12 @@ service cloud.firestore {
           (request.resource.data.role == 'admin' &&
             get(/databases/$(database)/documents/orgs/$(orgId)).data.createdBy == request.auth.uid)
         );
-        // Admins manage the roster; anyone can update/remove their own record.
-        allow update, delete: if isAdmin(orgId) || request.auth.uid == uid;
+        // Admins manage the roster (including roles). You can update your own
+        // record but NOT change your own role — that would be self-promotion to
+        // admin. You can always remove yourself (leave the org).
+        allow update: if isAdmin(orgId) ||
+          (request.auth.uid == uid && request.resource.data.role == resource.data.role);
+        allow delete: if isAdmin(orgId) || request.auth.uid == uid;
       }
 
       match /memos/{memoId} {

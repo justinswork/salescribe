@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "eval": "node evals/run.mjs",
-    "gen:demo": "node scripts/generate-test-data.mjs"
+    "gen:demo": "node scripts/generate-test-data.mjs",
+    "test:rules": "firebase emulators:exec --only firestore \"node firestore-tests/rules.test.mjs\""
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.96.0",
@@ -21,6 +22,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

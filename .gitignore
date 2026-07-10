@@ -40,6 +40,8 @@ yarn-error.log*
 # firebase
 .firebase
 firebase-debug.log
+firestore-debug.log
+*-debug.log
 .runtimeconfig.json
 
 # Demo-data test runs (--limit). The real public/demo-data.json IS committed
