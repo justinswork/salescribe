@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useAuth } from "@/lib/AuthContext";
 import { clearDemoData, hasDemoData, loadDemoData } from "@/lib/storage";
 
@@ -146,6 +147,14 @@ export default function AccountMenu() {
                 </div>
               )}
             </div>
+            <div className="border-t border-zinc-200 dark:border-zinc-800" />
+            <Link
+              href="/team"
+              onClick={() => setOpen(false)}
+              className="block w-full text-left px-3 py-2 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+            >
+              Team
+            </Link>
             <div className="border-t border-zinc-200 dark:border-zinc-800" />
             <button
               type="button"
