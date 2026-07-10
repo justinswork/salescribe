@@ -8,7 +8,7 @@ import AccountMenu from "@/components/AccountMenu";
 import ThemeToggle from "@/components/ThemeToggle";
 import MemoDetailView from "@/components/MemoDetailView";
 import { useAuth } from "@/lib/AuthContext";
-import { getMemo } from "@/lib/storage";
+import { getMemo, getMemoBySeq } from "@/lib/storage";
 import type { Memo } from "@/lib/schema";
 
 export default function MemoPage() {
@@ -22,7 +22,9 @@ export default function MemoPage() {
 function MemoPageContent() {
   const { user, org } = useAuth();
   const router = useRouter();
-  const id = String(useParams().id ?? "");
+  // The path segment is normally the memo's sequence number (memo #N); it may
+  // also be a raw doc id for memos created before numbering.
+  const key = String(useParams().id ?? "");
 
   const [memo, setMemo] = useState<Memo | null>(null);
   const [loading, setLoading] = useState(true);
@@ -34,7 +36,7 @@ function MemoPageContent() {
     void (async () => {
       setLoading(true);
       try {
-        const m = await getMemo(id);
+        const m = /^\d+$/.test(key) ? await getMemoBySeq(Number(key)) : await getMemo(key);
         if (cancelled) return;
         if (m) setMemo(m);
         else setError("This memo doesn't exist, or you don't have access to it.");
@@ -47,7 +49,7 @@ function MemoPageContent() {
     return () => {
       cancelled = true;
     };
-  }, [user, org, id]);
+  }, [user, org, key]);
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">

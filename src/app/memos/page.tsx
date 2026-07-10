@@ -344,7 +344,7 @@ function MemosPageContent() {
                     <div className="flex items-center justify-between gap-3">
                       <button
                         type="button"
-                        onClick={() => router.push(`/memos/${m.id}`)}
+                        onClick={() => router.push(`/memos/${m.seq ?? m.id}`)}
                         className="flex-1 min-w-0 text-left text-sm"
                       >
                         <div className="font-medium text-zinc-900 dark:text-zinc-100 truncate">

@@ -376,7 +376,7 @@ function SalescribeApp() {
   }
 
   function openMemo(m: Memo) {
-    router.push(`/memos/${m.id}`);
+    router.push(`/memos/${m.seq ?? m.id}`);
   }
 
   async function handleDelete(id: string) {

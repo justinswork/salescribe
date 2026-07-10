@@ -177,6 +177,14 @@ export async function getMemo(id: string): Promise<Memo | null> {
   return snap.exists() ? (snap.data() as Memo) : null;
 }
 
+// Look up a memo by its user-facing sequence number (memo #N). Rules still
+// gate access — a query that would return an unreadable (private, not yours)
+// memo is denied rather than returned.
+export async function getMemoBySeq(seq: number): Promise<Memo | null> {
+  const snap = await getDocs(query(memosCollection(), where("seq", "==", seq)));
+  return snap.empty ? null : (snap.docs[0].data() as Memo);
+}
+
 export async function deleteMemo(id: string): Promise<void> {
   await deleteDoc(doc(memosCollection(), id));
 }
