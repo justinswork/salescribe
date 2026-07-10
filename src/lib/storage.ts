@@ -177,12 +177,18 @@ export async function getMemo(id: string): Promise<Memo | null> {
   return snap.exists() ? (snap.data() as Memo) : null;
 }
 
-// Look up a memo by its user-facing sequence number (memo #N). Rules still
-// gate access — a query that would return an unreadable (private, not yours)
-// memo is denied rather than returned.
+// Look up a memo by its user-facing sequence number (memo #N).
+//
+// A bare where("seq","==") query is rejected by Firestore ("rules are not
+// filters"): the read rule allows a memo only if it's shared OR yours, and
+// that query doesn't constrain those fields, so Firestore can't prove the
+// result is readable and denies the whole query. Instead we resolve through
+// the same access-safe queries loadMemos uses (shared + own) and pick the
+// match — so access is still correctly enforced and an unreadable memo simply
+// isn't found.
 export async function getMemoBySeq(seq: number): Promise<Memo | null> {
-  const snap = await getDocs(query(memosCollection(), where("seq", "==", seq)));
-  return snap.empty ? null : (snap.docs[0].data() as Memo);
+  const memos = await loadMemos();
+  return memos.find((m) => m.seq === seq) ?? null;
 }
 
 export async function deleteMemo(id: string): Promise<void> {
