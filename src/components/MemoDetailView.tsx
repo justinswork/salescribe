@@ -6,8 +6,9 @@ import VisibilityPill from "@/components/VisibilityPill";
 import MemoEditor from "@/components/MemoEditor";
 import MemoHistoryView, { ago } from "@/components/MemoHistoryView";
 import { useAuth } from "@/lib/AuthContext";
-import { getMemoAudioUrl } from "@/lib/storage";
-import type { Memo } from "@/lib/schema";
+import { getMemoAudioUrl, updateMemo } from "@/lib/storage";
+import { authedFetch, apiError } from "@/lib/api";
+import type { Extraction, Memo } from "@/lib/schema";
 
 function ClockIcon() {
   return (
@@ -43,6 +44,8 @@ export default function MemoDetailView({
   const [editing, setEditing] = useState(false);
   const [tab, setTab] = useState<"details" | "history">("details");
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [reextracting, setReextracting] = useState(false);
+  const [actionError, setActionError] = useState("");
 
   // Resolve a playable URL for the original recording, if this memo has one.
   useEffect(() => {
@@ -67,6 +70,36 @@ export default function MemoDetailView({
   const isAuthor = Boolean(memo.authorUid && user?.uid && memo.authorUid === user.uid);
   const canEdit =
     isAuthor || (org?.role === "admin" && (memo.visibility ?? "shared") === "shared");
+
+  function handleReextract() {
+    if (!onUpdated) return;
+    if (
+      !confirm(
+        "Re-run extraction from the transcript? This replaces the current structured fields (summary, deal, contacts, events, reminders).",
+      )
+    ) {
+      return;
+    }
+    void (async () => {
+      setReextracting(true);
+      setActionError("");
+      try {
+        const r = await authedFetch("/api/extract", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ transcript: memo.transcript, chat: [], reference_now_iso: memo.created_iso }),
+        });
+        if (!r.ok) throw new Error(await apiError(r, "Re-extraction failed"));
+        const data = (await r.json()) as { extraction: Extraction };
+        const saved = await updateMemo(memo, { ...memo, extraction: data.extraction });
+        onUpdated(saved);
+      } catch (e) {
+        setActionError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setReextracting(false);
+      }
+    })();
+  }
 
   if (editing) {
     return (
@@ -111,15 +144,29 @@ export default function MemoDetailView({
           )}
         </div>
         {canEdit && onUpdated && (
-          <button
-            type="button"
-            onClick={() => setEditing(true)}
-            className="shrink-0 rounded border border-zinc-300 dark:border-zinc-700 px-3 py-1.5 text-sm text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-900"
-          >
-            Edit
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={handleReextract}
+              disabled={reextracting}
+              className="rounded border border-zinc-300 dark:border-zinc-700 px-3 py-1.5 text-sm text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-900 disabled:opacity-50"
+              title="Regenerate the structured fields from the transcript"
+            >
+              {reextracting ? "Re-extracting…" : "Re-extract"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setEditing(true)}
+              className="rounded border border-zinc-300 dark:border-zinc-700 px-3 py-1.5 text-sm text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-900"
+            >
+              Edit
+            </button>
+          </div>
         )}
       </div>
+      {actionError && (
+        <div className="text-sm text-red-600 dark:text-red-400 break-words">{actionError}</div>
+      )}
 
       {/* Tabs */}
       <div className="flex items-center gap-1 border-b border-zinc-200 dark:border-zinc-800">
