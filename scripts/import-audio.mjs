@@ -78,29 +78,35 @@ function parseManifest(path) {
 }
 
 // --- transcription -----------------------------------------------------------
-function transcriptFor(audioPath) {
+function transcriptFor(audioPath, whisperPrompt) {
   const sidecar = join(dirname(audioPath), `${basename(audioPath, extname(audioPath))}.txt`);
   if (existsSync(sidecar)) return readFileSync(sidecar, "utf8").trim();
   if (!DO_TRANSCRIBE) {
     throw new Error(`No transcript for ${audioPath}. Provide a .txt sidecar or pass --transcribe.`);
   }
   const out = tmpdir();
-  const res = spawnSync("whisper", [audioPath, "--model", MODEL, "--output_format", "txt", "--output_dir", out], {
-    encoding: "utf8",
-  });
+  const args = [audioPath, "--model", MODEL, "--output_format", "txt", "--output_dir", out];
+  // Bias Whisper toward the org's proper nouns (same glossary the app uses).
+  if (whisperPrompt) args.push("--initial_prompt", whisperPrompt);
+  const res = spawnSync("whisper", args, { encoding: "utf8" });
   if (res.status !== 0) throw new Error(`whisper failed for ${audioPath}: ${res.stderr || res.error}`);
   const txt = join(out, `${basename(audioPath, extname(audioPath))}.txt`);
   return readFileSync(txt, "utf8").trim();
 }
 
 // --- extraction (reuse the running app's extractor) --------------------------
-async function extract(transcript, dateIso) {
+async function extract(transcript, dateIso, orgContext) {
   const headers = { "Content-Type": "application/json" };
   if (TOKEN) headers["Authorization"] = `Bearer ${TOKEN}`;
   const r = await fetch(`${SERVER}/api/extract`, {
     method: "POST",
     headers,
-    body: JSON.stringify({ transcript, chat: [], reference_now_iso: dateIso }),
+    body: JSON.stringify({
+      transcript,
+      chat: [],
+      reference_now_iso: dateIso,
+      org_context: orgContext ?? undefined,
+    }),
   });
   if (!r.ok) throw new Error(`extract HTTP ${r.status}: ${await r.text()}`);
   return (await r.json()).extraction;
@@ -122,6 +128,29 @@ async function nextSeq() {
   });
 }
 
+// Build the glossary grounding (same shape the app uses) so imported notes get
+// correct proper-noun spelling and don't file teammates as prospect contacts.
+async function buildGrounding() {
+  const uniq = (l) => Array.from(new Set(l.map((s) => s.trim()).filter(Boolean)));
+  const [gSnap, mSnap, oSnap] = await Promise.all([
+    db.doc(`orgs/${ORG}/config/glossary`).get(),
+    db.collection(`orgs/${ORG}/members`).get(),
+    db.doc(`orgs/${ORG}`).get(),
+  ]);
+  const g = gSnap.exists ? gSnap.data() : {};
+  const terms = uniq(g.terms ?? []);
+  const memberNames = mSnap.docs.map((d) => d.data().displayName || "").filter(Boolean);
+  const team = uniq([...memberNames, ...(g.teamNames ?? [])]);
+  const orgName = (oSnap.exists ? oSnap.data().name : "") || ORG;
+  const lines = [`Our company is "${orgName}".`];
+  if (team.length) lines.push(`People on our own team (do NOT record them as prospect contacts): ${team.join(", ")}.`);
+  if (terms.length) lines.push(`Our products / known names (use these exact spellings): ${terms.join(", ")}.`);
+  return {
+    extractContext: lines.length > 1 ? lines.join(" ") : null,
+    whisperPrompt: uniq([...terms, ...team]).join(", ").slice(0, 800),
+  };
+}
+
 // Rows come from a manifest CSV, or (single-author mode) every audio file in
 // --dir attributed to --email.
 const rows = MANIFEST
@@ -133,6 +162,8 @@ const rows = MANIFEST
 
 console.log(`Importing ${rows.length} note(s) into org "${ORG}"${DRY_RUN ? " (dry run)" : ""}\n`);
 
+const grounding = await buildGrounding();
+
 let ok = 0;
 const failures = [];
 for (const row of rows) {
@@ -141,9 +172,9 @@ for (const row of rows) {
     if (!existsSync(audioPath)) throw new Error(`file not found: ${audioPath}`);
     const user = await auth.getUserByEmail(row.email);
     const dateIso = row.date ? new Date(row.date).toISOString() : new Date().toISOString();
-    const transcript = transcriptFor(audioPath);
+    const transcript = transcriptFor(audioPath, grounding.whisperPrompt);
     if (!transcript) throw new Error("empty transcript");
-    const extraction = await extract(transcript, dateIso);
+    const extraction = await extract(transcript, dateIso, grounding.extractContext);
 
     const id = randomUUID();
     const ext = extname(audioPath).slice(1) || "webm";
