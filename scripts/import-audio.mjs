@@ -21,9 +21,13 @@
 //   file,email,date,visibility
 //   2024-03-14_northwind.mp3,sarah@vibrationresearch.com,2024-03-14,shared
 //
-// Usage:
+// Usage (manifest — mixed authors):
 //   node scripts/import-audio.mjs --dir ./audio --manifest ./audio/manifest.csv \
 //     --org vibrationresearch.com [--transcribe] [--model base] [--dry-run]
+//
+// Usage (single author — import a whole folder for one person, no manifest):
+//   node scripts/import-audio.mjs --dir ./audio/collin --email collin@vibrationresearch.com \
+//     --org vibrationresearch.com [--visibility shared] [--transcribe] [--dry-run]
 
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { spawnSync } from "node:child_process";
@@ -44,6 +48,8 @@ function arg(name, fallback) {
 
 const DIR = arg("dir", ".");
 const MANIFEST = arg("manifest");
+const EMAIL = arg("email"); // single-author mode: import every audio file in --dir for this user
+const VISIBILITY = arg("visibility", "shared");
 const ORG = arg("org");
 const SERVER = arg("server", "http://localhost:3000");
 const TOKEN = arg("token"); // SALESCRIBE_SERVICE_TOKEN when hitting a deployed server
@@ -52,10 +58,12 @@ const DO_TRANSCRIBE = Boolean(arg("transcribe", false));
 const DRY_RUN = Boolean(arg("dry-run", false));
 const BUCKET = arg("bucket", process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET);
 
-if (!MANIFEST || !ORG) {
-  console.error("Missing required --manifest and/or --org. See the header of this file for usage.");
+if (!ORG || (!MANIFEST && !EMAIL)) {
+  console.error("Need --org and either --manifest or --email. See the header of this file for usage.");
   process.exit(1);
 }
+
+const AUDIO_EXTS = new Set(["mp3", "m4a", "wav", "webm", "mp4", "ogg", "flac"]);
 
 // --- manifest ----------------------------------------------------------------
 function parseManifest(path) {
@@ -114,7 +122,15 @@ async function nextSeq() {
   });
 }
 
-const rows = parseManifest(MANIFEST);
+// Rows come from a manifest CSV, or (single-author mode) every audio file in
+// --dir attributed to --email.
+const rows = MANIFEST
+  ? parseManifest(MANIFEST)
+  : readdirSync(DIR)
+      .filter((f) => AUDIO_EXTS.has(extname(f).slice(1).toLowerCase()))
+      .sort()
+      .map((f) => ({ file: f, email: EMAIL, date: "", visibility: VISIBILITY }));
+
 console.log(`Importing ${rows.length} note(s) into org "${ORG}"${DRY_RUN ? " (dry run)" : ""}\n`);
 
 let ok = 0;
