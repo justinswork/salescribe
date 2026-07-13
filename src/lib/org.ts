@@ -277,6 +277,33 @@ export async function setGlossary(orgId: string, g: OrgGlossary): Promise<void> 
   );
 }
 
+export type OrgGrounding = { extractContext: string | null; whisperPrompt: string };
+
+// Build the grounding strings the AI routes consume, on the client (works in
+// every environment, unlike server-side resolution which needs the Admin SDK
+// and a real "user" principal). memberNames come from the org roster; the
+// glossary adds terms + non-member teammates.
+export function buildOrgGrounding(
+  orgName: string,
+  glossary: OrgGlossary,
+  memberNames: string[],
+): OrgGrounding {
+  const uniq = (l: string[]) => Array.from(new Set(l.map((s) => s.trim()).filter(Boolean)));
+  const team = uniq([...memberNames, ...glossary.teamNames]);
+  const terms = uniq(glossary.terms);
+  const lines = [`Our company is "${orgName}".`];
+  if (team.length) {
+    lines.push(`People on our own team (do NOT record them as prospect contacts): ${team.join(", ")}.`);
+  }
+  if (terms.length) {
+    lines.push(`Our products / known names (use these exact spellings): ${terms.join(", ")}.`);
+  }
+  return {
+    extractContext: lines.length > 1 ? lines.join(" ") : null,
+    whisperPrompt: uniq([...terms, ...team]).join(", ").slice(0, 800),
+  };
+}
+
 // ---- User profile -----------------------------------------------------------
 
 export async function getUserProfile(uid: string): Promise<UserProfile | null> {

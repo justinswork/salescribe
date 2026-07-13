@@ -2,8 +2,6 @@ import { NextRequest } from "next/server";
 import { MODELS } from "@/lib/clients";
 import { authorize } from "@/lib/auth";
 import { anthropicFor } from "@/lib/ai";
-import { getUserOrgId } from "@/lib/org-keys";
-import { extractionContextFor } from "@/lib/org-context";
 import { recordUsage } from "@/lib/ratelimit";
 import { LIMITS } from "@/lib/limits";
 import { EXTRACTOR_SYSTEM } from "@/lib/prompts";
@@ -17,6 +15,9 @@ type Body = {
   transcript: string;
   chat?: ChatMessage[];
   reference_now_iso?: string;
+  // Client-built grounding (org name, team, glossary terms). Trusted enough:
+  // it comes from an authenticated member and only affects their extraction.
+  org_context?: string;
 };
 
 export async function POST(req: NextRequest) {
@@ -55,16 +56,11 @@ export async function POST(req: NextRequest) {
 
   const now = reference_now_iso ?? new Date().toISOString();
 
-  // Server-generated (trusted) grounding: the org's name, team, and known
-  // terms. Presented as guidance so the model uses it for spelling and to
-  // avoid filing our own people as prospect contacts.
-  let orgContext: string | null = null;
-  if (principal.kind === "user") {
-    const orgId = await getUserOrgId(principal.uid);
-    if (orgId) orgContext = await extractionContextFor(orgId);
-  }
-  const contextBlock = orgContext
-    ? `\nUse this company context for proper-noun spelling and to recognize our own team (never list our team as prospect contacts): ${orgContext}\n`
+  // Company grounding supplied by the client (glossary + roster). Presented as
+  // guidance so the model uses the org's spellings and doesn't file our own
+  // team as prospect contacts.
+  const contextBlock = body.org_context
+    ? `\nUse this company context for proper-noun spelling and to recognize our own team (never list our team as prospect contacts): ${body.org_context.slice(0, 4000)}\n`
     : "";
 
   // Spotlighting: user-provided content is wrapped in explicit delimiters so

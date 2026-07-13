@@ -12,7 +12,15 @@ import {
   User,
 } from "firebase/auth";
 import { getAuthInstance, googleProvider, microsoftProvider } from "./firebase";
-import { resolveOrg, getUserProfile, type OrgContext } from "./org";
+import {
+  resolveOrg,
+  getUserProfile,
+  getGlossary,
+  listMembers,
+  buildOrgGrounding,
+  type OrgContext,
+  type OrgGrounding,
+} from "./org";
 import type { UserProfile } from "./schema";
 
 export type ProviderId = "google" | "microsoft";
@@ -29,6 +37,8 @@ type AuthState = {
   orgLoading: boolean;
   // The current user's editable profile (name, title, avatar color/photo).
   profile: UserProfile | null;
+  // Client-built grounding (glossary + roster) passed to the AI routes.
+  orgGrounding: OrgGrounding | null;
   // Re-resolve the current user's org + profile (after joining via invite, a
   // role change, or a profile edit) so the app reflects it without a reload.
   reloadOrg: () => Promise<void>;
@@ -51,6 +61,7 @@ const AuthContext = createContext<AuthState>({
   org: null,
   orgLoading: false,
   profile: null,
+  orgGrounding: null,
   reloadOrg: async () => {},
   signIn: async () => {},
   signInWithEmail: async () => {},
@@ -103,6 +114,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [org, setOrg] = useState<OrgContext | null>(null);
   const [orgLoading, setOrgLoading] = useState(false);
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [orgGrounding, setOrgGrounding] = useState<OrgGrounding | null>(null);
 
   useEffect(() => {
     return onAuthStateChanged(getAuthInstance(), (u) => {
@@ -113,10 +125,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!u) {
         setOrg(null);
         setProfile(null);
+        setOrgGrounding(null);
       }
       setLoading(false);
     });
   }, []);
+
+  // Read the glossary + roster and build the AI grounding. Best-effort.
+  async function loadGrounding(o: OrgContext): Promise<OrgGrounding | null> {
+    try {
+      const [g, members] = await Promise.all([getGlossary(o.id), listMembers(o.id)]);
+      return buildOrgGrounding(o.name, g, members.map((m) => m.displayName));
+    } catch {
+      return null;
+    }
+  }
 
   // Resolve (and lazily create) the user's org once their email is verified.
   // Runs on sign-in and whenever verification flips true. Every memo path is
@@ -132,6 +155,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!cancelled) setOrg(resolved);
         const p = await getUserProfile(user.uid);
         if (!cancelled) setProfile(p);
+        const grounding = await loadGrounding(resolved);
+        if (!cancelled) setOrgGrounding(grounding);
       } catch (e) {
         if (!cancelled) setAuthError(e instanceof Error ? e.message : String(e));
       } finally {
@@ -146,8 +171,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function reloadOrg() {
     const current = getAuthInstance().currentUser;
     if (!current) return;
-    setOrg(await resolveOrg(current));
+    const resolved = await resolveOrg(current);
+    setOrg(resolved);
     setProfile(await getUserProfile(current.uid));
+    setOrgGrounding(await loadGrounding(resolved));
   }
 
   async function signIn(providerId: ProviderId = "google") {
@@ -241,6 +268,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         org,
         orgLoading,
         profile,
+        orgGrounding,
         reloadOrg,
         signIn,
         signInWithEmail,

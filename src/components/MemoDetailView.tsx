@@ -40,7 +40,7 @@ export default function MemoDetailView({
   memo: Memo;
   onUpdated?: (m: Memo) => void;
 }) {
-  const { user, org } = useAuth();
+  const { user, org, orgGrounding } = useAuth();
   const [editing, setEditing] = useState(false);
   const [tab, setTab] = useState<"details" | "history">("details");
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
@@ -80,6 +80,7 @@ export default function MemoDetailView({
     ) {
       return;
     }
+    setTab("details"); // so the fields visibly clear and regenerate
     void (async () => {
       setReextracting(true);
       setActionError("");
@@ -87,7 +88,12 @@ export default function MemoDetailView({
         const r = await authedFetch("/api/extract", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ transcript: memo.transcript, chat: [], reference_now_iso: memo.created_iso }),
+          body: JSON.stringify({
+            transcript: memo.transcript,
+            chat: [],
+            reference_now_iso: memo.created_iso,
+            org_context: orgGrounding?.extractContext ?? undefined,
+          }),
         });
         if (!r.ok) throw new Error(await apiError(r, "Re-extraction failed"));
         const data = (await r.json()) as { extraction: Extraction };
@@ -219,7 +225,16 @@ export default function MemoDetailView({
             </p>
           </section>
 
-          <ExtractionView extraction={memo.extraction} />
+          {reextracting ? (
+            <section className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-4">
+              <div className="flex items-center gap-3 text-sm text-zinc-500 dark:text-zinc-400">
+                <span className="inline-block h-3 w-3 rounded-full bg-zinc-400 animate-pulse" />
+                <span>Re-extracting from the transcript…</span>
+              </div>
+            </section>
+          ) : (
+            <ExtractionView extraction={memo.extraction} />
+          )}
 
           {memo.chat.length > 0 && (
             <section className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-4">

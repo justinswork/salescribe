@@ -78,7 +78,7 @@ function VisibilityToggle({
 }
 
 function SalescribeApp() {
-  const { user, profile } = useAuth();
+  const { user, profile, orgGrounding } = useAuth();
   const handsFree = useHandsFree();
   const router = useRouter();
 
@@ -286,6 +286,7 @@ function SalescribeApp() {
           transcript: text,
           chat: [],
           reference_now_iso: new Date().toISOString(),
+          org_context: orgGrounding?.extractContext ?? undefined,
         }),
       });
       if (!r.ok) throw new Error(await apiError(r, "Extraction failed"));
@@ -350,6 +351,7 @@ function SalescribeApp() {
     try {
       const fd = new FormData();
       fd.append("audio", new File([blob], filename, { type: blob.type }));
+      if (orgGrounding?.whisperPrompt) fd.append("prompt", orgGrounding.whisperPrompt);
       const r = await authedFetch("/api/transcribe", { method: "POST", body: fd });
       if (r.ok) {
         const data = (await r.json()) as { transcript: string };
@@ -403,6 +405,7 @@ function SalescribeApp() {
           transcript,
           chat: newChat,
           reference_now_iso: new Date().toISOString(),
+          org_context: orgGrounding?.extractContext ?? undefined,
         }),
       });
       if (!r.ok) throw new Error(await apiError(r, "Re-extraction failed"));
