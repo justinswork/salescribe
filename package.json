@@ -9,6 +9,7 @@
     "lint": "eslint",
     "eval": "node evals/run.mjs",
     "gen:demo": "node scripts/generate-test-data.mjs",
+    "import:audio": "node scripts/import-audio.mjs",
     "test:rules": "firebase emulators:exec --only firestore \"node firestore-tests/rules.test.mjs\""
   },
   "dependencies": {
