@@ -3,6 +3,7 @@
 import { initializeApp, getApps, type FirebaseApp } from "firebase/app";
 import { getAuth as fbGetAuth, GoogleAuthProvider, OAuthProvider, type Auth } from "firebase/auth";
 import { getFirestore, type Firestore } from "firebase/firestore";
+import { getStorage, type FirebaseStorage } from "firebase/storage";
 
 // Firebase Web SDK config. NEXT_PUBLIC_* values get baked into the client
 // bundle at build time. They're public by design — security comes from
@@ -27,6 +28,7 @@ function getConfig() {
 let _app: FirebaseApp | undefined;
 let _auth: Auth | undefined;
 let _db: Firestore | undefined;
+let _storage: FirebaseStorage | undefined;
 
 function getApp(): FirebaseApp {
   if (_app) return _app;
@@ -42,6 +44,11 @@ export function getAuthInstance(): Auth {
 export function getDbInstance(): Firestore {
   if (!_db) _db = getFirestore(getApp());
   return _db;
+}
+
+export function getStorageInstance(): FirebaseStorage {
+  if (!_storage) _storage = getStorage(getApp());
+  return _storage;
 }
 
 // Provider construction doesn't touch config — safe to export as a const.

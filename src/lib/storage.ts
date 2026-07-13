@@ -25,7 +25,8 @@ import {
   where,
   writeBatch,
 } from "firebase/firestore";
-import { getAuthInstance, getDbInstance } from "./firebase";
+import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
+import { getAuthInstance, getDbInstance, getStorageInstance } from "./firebase";
 import { currentOrgId } from "./org";
 import type { Extraction, Memo, MemoChange, MemoRevision, MemoVisibility } from "./schema";
 
@@ -193,6 +194,27 @@ export async function getMemoBySeq(seq: number): Promise<Memo | null> {
 
 export async function deleteMemo(id: string): Promise<void> {
   await deleteDoc(doc(memosCollection(), id));
+}
+
+// ---- Original recording (Cloud Storage) -------------------------------------
+
+// Upload a memo's raw audio to orgs/{orgId}/memos/{memoId}/audio.<ext> and
+// return the storage path (stored on the memo via setMemoAudio). Call AFTER the
+// memo doc exists, so the storage rules can authorize by the memo's author.
+export async function uploadMemoAudio(memoId: string, blob: Blob, ext: string): Promise<string> {
+  const path = `orgs/${currentOrgId()}/memos/${memoId}/audio.${ext}`;
+  await uploadBytes(storageRef(getStorageInstance(), path), blob, {
+    contentType: blob.type || undefined,
+  });
+  return path;
+}
+
+export async function setMemoAudio(memoId: string, audioPath: string): Promise<void> {
+  await setDoc(doc(memosCollection(), memoId), { audioPath }, { merge: true });
+}
+
+export async function getMemoAudioUrl(audioPath: string): Promise<string> {
+  return getDownloadURL(storageRef(getStorageInstance(), audioPath));
 }
 
 // Flip a memo between shared and private after the fact. Rules only permit this

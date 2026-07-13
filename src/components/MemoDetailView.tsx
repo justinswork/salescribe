@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import ExtractionView from "@/components/ExtractionView";
 import VisibilityPill from "@/components/VisibilityPill";
 import MemoEditor from "@/components/MemoEditor";
 import MemoHistoryView, { ago } from "@/components/MemoHistoryView";
 import { useAuth } from "@/lib/AuthContext";
+import { getMemoAudioUrl } from "@/lib/storage";
 import type { Memo } from "@/lib/schema";
 
 function ClockIcon() {
@@ -41,6 +42,27 @@ export default function MemoDetailView({
   const { user, org } = useAuth();
   const [editing, setEditing] = useState(false);
   const [tab, setTab] = useState<"details" | "history">("details");
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+
+  // Resolve a playable URL for the original recording, if this memo has one.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      if (!memo.audioPath) {
+        if (!cancelled) setAudioUrl(null);
+        return;
+      }
+      try {
+        const url = await getMemoAudioUrl(memo.audioPath);
+        if (!cancelled) setAudioUrl(url);
+      } catch {
+        if (!cancelled) setAudioUrl(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [memo.audioPath]);
 
   const isAuthor = Boolean(memo.authorUid && user?.uid && memo.authorUid === user.uid);
   const canEdit =
@@ -133,6 +155,14 @@ export default function MemoDetailView({
 
       {tab === "details" ? (
         <>
+          {audioUrl && (
+            <section className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-4">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-2">
+                Recording
+              </h2>
+              <audio controls src={audioUrl} className="w-full" />
+            </section>
+          )}
           <section className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-4">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-2">
               Transcript

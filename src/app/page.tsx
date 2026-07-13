@@ -20,6 +20,8 @@ import {
   saveMemo,
   deleteMemo,
   setMemoVisibility,
+  uploadMemoAudio,
+  setMemoAudio,
   newMemoId,
   findRelatedMemos,
   getCompanyOptions,
@@ -123,6 +125,9 @@ function SalescribeApp() {
   // Latest browser live-transcript, mirrored to a ref so the transcription
   // fallback (when the org has no OpenAI key) can read it without a stale closure.
   const liveTranscriptRef = useRef("");
+  // The recording's raw audio, held from onAudio until the memo is saved and we
+  // upload it to Cloud Storage. Null for typed memos.
+  const pendingAudioRef = useRef<{ blob: Blob; ext: string } | null>(null);
 
   // Load past memos whenever the signed-in user changes.
   useEffect(() => {
@@ -165,6 +170,7 @@ function SalescribeApp() {
     setCurrentMemoId("");
     setLiveTranscript("");
     setVisibility("shared");
+    pendingAudioRef.current = null;
   }
 
   // On unmount, kill any in-flight speech or listening so the user doesn't get
@@ -249,6 +255,20 @@ function SalescribeApp() {
       visibility,
     };
     await saveMemo(memo);
+    // Upload the raw recording (if any) now that the memo doc exists, so the
+    // storage rules can authorize by the memo's author. Non-fatal on failure —
+    // the memo is already saved.
+    const audio = pendingAudioRef.current;
+    if (audio) {
+      try {
+        const path = await uploadMemoAudio(id, audio.blob, audio.ext);
+        await setMemoAudio(id, path);
+      } catch (e) {
+        console.error("[audio] upload failed:", e);
+      } finally {
+        pendingAudioRef.current = null;
+      }
+    }
     const fresh = await loadMemos();
     setPastMemos(fresh);
   }
@@ -314,6 +334,9 @@ function SalescribeApp() {
   async function onAudio(blob: Blob, filename: string) {
     setStatus("transcribing");
     setError("");
+    // Hold the raw audio to upload once the memo is saved.
+    const ext = filename.includes(".") ? filename.split(".").pop() || "webm" : "webm";
+    pendingAudioRef.current = { blob, ext };
     const browserText = liveTranscriptRef.current.trim();
     try {
       const fd = new FormData();

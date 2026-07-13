@@ -1,0 +1,24 @@
+rules_version = '2';
+
+// Cloud Storage rules for memo audio. These mirror the Firestore memo access
+// model by reading the memo doc cross-service: a member can read a recording
+// only if the memo is shared or they authored it; only the author can upload
+// (which happens after the memo doc is saved). Everything else is denied by
+// default.
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /orgs/{orgId}/memos/{memoId}/{file=**} {
+      function isMember() {
+        return request.auth != null &&
+          firestore.exists(/databases/(default)/documents/orgs/$(orgId)/members/$(request.auth.uid));
+      }
+      function memo() {
+        return firestore.get(/databases/(default)/documents/orgs/$(orgId)/memos/$(memoId)).data;
+      }
+
+      allow read: if isMember() &&
+        (memo().visibility == 'shared' || memo().authorUid == request.auth.uid);
+      allow write: if isMember() && memo().authorUid == request.auth.uid;
+    }
+  }
+}

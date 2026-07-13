@@ -301,6 +301,9 @@ export type Memo = {
   authorUid?: string;
   authorName?: string;
   visibility?: MemoVisibility;
+  // Cloud Storage path to the original recording, if this memo was dictated
+  // (typed memos have none). Playback resolves a download URL from it.
+  audioPath?: string;
   // Flag set by the demo-data loader so a "Clear demo data" action can find
   // every fictional memo and delete just those, leaving real ones alone.
   is_demo?: boolean;
