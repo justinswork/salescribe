@@ -43,6 +43,9 @@ firebase-debug.log
 firestore-debug.log
 *-debug.log
 .runtimeconfig.json
+# service-account keys and the working users list (real emails) — never commit
+*serviceAccount*.json
+/scripts/users.csv
 
 # Demo-data test runs (--limit). The real public/demo-data.json IS committed
 # so the deployed "Load demo data" button works; the sample is a local-only
