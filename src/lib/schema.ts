@@ -317,6 +317,15 @@ export type Memo = {
 
 export type OrgRole = "admin" | "member";
 
+// Per-org vocabulary that grounds transcription + extraction: proper nouns
+// (products, partners/competitors) so Whisper spells them right, and internal
+// team names (beyond app members) so the extractor doesn't file colleagues as
+// prospect contacts. Stored at orgs/{orgId}/config/glossary.
+export type OrgGlossary = {
+  terms: string[];
+  teamNames: string[];
+};
+
 export type Org = {
   id: string;
   name: string;

@@ -299,6 +299,28 @@ await check("even an admin cannot write org secrets from the client", () =>
   assertFails(setDoc(doc(as("alice", "alice@acme.com"), "orgs", ORG, "private", "keys"), { anthropic: "x" })),
 );
 
+// --- Glossary (config) -------------------------------------------------------
+console.log("\nGlossary");
+await testEnv.clearFirestore();
+await seed(async (db) => {
+  await setDoc(orgDoc(db), ORG_DATA);
+  await setDoc(memberDoc(db, "alice"), member("alice", "admin"));
+  await setDoc(memberDoc(db, "bob"), member("bob", "member"));
+});
+const glossaryDoc = (db) => doc(db, "orgs", ORG, "config", "glossary");
+await check("member can read the glossary", () =>
+  assertSucceeds(getDoc(glossaryDoc(as("bob", "bob@acme.com")))),
+);
+await check("admin can write the glossary", () =>
+  assertSucceeds(setDoc(glossaryDoc(as("alice", "alice@acme.com")), { terms: ["ObserVIEW"], teamNames: [] })),
+);
+await check("non-admin member cannot write the glossary", () =>
+  assertFails(setDoc(glossaryDoc(as("bob", "bob@acme.com")), { terms: ["x"] })),
+);
+await check("non-member cannot read the glossary", () =>
+  assertFails(getDoc(glossaryDoc(as("carol", "carol@other.com")))),
+);
+
 await testEnv.cleanup();
 
 const total = passed + failures.length;

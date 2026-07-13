@@ -110,6 +110,12 @@ service cloud.firestore {
       match /private/{doc} {
         allow read, write: if false;
       }
+
+      // Per-org config (e.g. the glossary). Members read; admins write.
+      match /config/{doc} {
+        allow read: if isMember(orgId);
+        allow write: if isAdmin(orgId);
+      }
     }
 
     // Per-user rate-limit + usage counters. Written ONLY by the server via the

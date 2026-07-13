@@ -21,7 +21,7 @@ import {
 } from "firebase/firestore";
 import { updateProfile, type User } from "firebase/auth";
 import { getDbInstance } from "./firebase";
-import type { Invite, Org, OrgMember, OrgRole, UserProfile } from "./schema";
+import type { Invite, Org, OrgGlossary, OrgMember, OrgRole, UserProfile } from "./schema";
 
 const PUBLIC_EMAIL_DOMAINS = new Set([
   "gmail.com",
@@ -257,6 +257,24 @@ export async function removeMember(orgId: string, uid: string): Promise<void> {
 
 export async function renameOrg(orgId: string, name: string): Promise<void> {
   await updateDoc(doc(getDbInstance(), "orgs", orgId), { name: name.trim() });
+}
+
+// ---- Glossary ---------------------------------------------------------------
+
+const glossaryRef = (orgId: string) => doc(getDbInstance(), "orgs", orgId, "config", "glossary");
+
+export async function getGlossary(orgId: string): Promise<OrgGlossary> {
+  const snap = await getDoc(glossaryRef(orgId));
+  const d = snap.exists() ? snap.data() : {};
+  return { terms: (d.terms as string[]) ?? [], teamNames: (d.teamNames as string[]) ?? [] };
+}
+
+export async function setGlossary(orgId: string, g: OrgGlossary): Promise<void> {
+  await setDoc(
+    glossaryRef(orgId),
+    { terms: g.terms, teamNames: g.teamNames, updatedAt: Date.now() },
+    { merge: true },
+  );
 }
 
 // ---- User profile -----------------------------------------------------------

@@ -16,6 +16,8 @@ import {
   setMemberRole,
   removeMember,
   renameOrg,
+  getGlossary,
+  setGlossary,
 } from "@/lib/org";
 import type { Invite, OrgMember } from "@/lib/schema";
 
@@ -50,6 +52,11 @@ function TeamPageContent() {
   const [savingKeys, setSavingKeys] = useState(false);
   const [keyNotice, setKeyNotice] = useState("");
 
+  const [glossaryTerms, setGlossaryTerms] = useState("");
+  const [glossaryTeam, setGlossaryTeam] = useState("");
+  const [savingGlossary, setSavingGlossary] = useState(false);
+  const [glossaryNotice, setGlossaryNotice] = useState("");
+
   async function refresh() {
     if (!org) return;
     try {
@@ -75,10 +82,36 @@ function TeamPageContent() {
         } catch {
           // status is best-effort; the section still renders with inputs
         }
+        try {
+          const g = await getGlossary(org.id);
+          setGlossaryTerms(g.terms.join("\n"));
+          setGlossaryTeam(g.teamNames.join("\n"));
+        } catch {
+          // best-effort
+        }
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [org?.id]);
+
+  function handleSaveGlossary() {
+    if (!org) return;
+    const parse = (s: string) =>
+      Array.from(new Set(s.split(/[\n,]/).map((x) => x.trim()).filter(Boolean)));
+    void (async () => {
+      setSavingGlossary(true);
+      setGlossaryNotice("");
+      setError("");
+      try {
+        await setGlossary(org.id, { terms: parse(glossaryTerms), teamNames: parse(glossaryTeam) });
+        setGlossaryNotice("Saved.");
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setSavingGlossary(false);
+      }
+    })();
+  }
 
   function handleSaveKeys() {
     void (async () => {
@@ -427,6 +460,59 @@ function TeamPageContent() {
                   {savingKeys ? "Saving…" : "Save keys"}
                 </button>
                 {keyNotice && <span className="text-sm text-green-700 dark:text-green-400">{keyNotice}</span>}
+              </div>
+            </div>
+          </section>
+        )}
+
+        {/* Glossary (admins only) */}
+        {isAdmin && (
+          <section className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-4">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">
+              Glossary
+            </h2>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-4">
+              Helps transcription spell your product and company names correctly, and keeps your own team
+              from being filed as prospect contacts. One per line or comma-separated. App members are already
+              included automatically — only add teammates who don&apos;t have accounts.
+            </p>
+            <div className="flex flex-col gap-4">
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                  Terms (products, companies)
+                </span>
+                <textarea
+                  value={glossaryTerms}
+                  onChange={(e) => setGlossaryTerms(e.target.value)}
+                  rows={4}
+                  placeholder={"ObserVIEW\nVibrationVIEW\nDewesoft"}
+                  className="w-full rounded border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400"
+                />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                  Internal team names (beyond app members)
+                </span>
+                <textarea
+                  value={glossaryTeam}
+                  onChange={(e) => setGlossaryTeam(e.target.value)}
+                  rows={3}
+                  placeholder={"Jade\nStephen"}
+                  className="w-full rounded border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400"
+                />
+              </label>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={handleSaveGlossary}
+                  disabled={savingGlossary}
+                  className="rounded bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 px-4 py-2 text-sm font-medium disabled:opacity-50"
+                >
+                  {savingGlossary ? "Saving…" : "Save glossary"}
+                </button>
+                {glossaryNotice && (
+                  <span className="text-sm text-green-700 dark:text-green-400">{glossaryNotice}</span>
+                )}
               </div>
             </div>
           </section>
