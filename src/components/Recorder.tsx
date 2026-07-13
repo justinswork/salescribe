@@ -6,8 +6,15 @@ import { listenLive, type ListenHandle } from "@/lib/speech";
 type Props = {
   onAudio: (blob: Blob, filename: string) => void;
   onLiveTranscript?: (text: string) => void;
+  // Upload an existing audio file instead of recording. Runs the same
+  // transcribe → extract → save flow; there's no live browser transcript for a
+  // file, so the parent clears any stale one before handing it to onAudio.
+  onUploadAudio?: (file: File) => void;
   disabled?: boolean;
 };
+
+// OpenAI Whisper caps upload bodies at 25 MB.
+const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 
 // Hard cap on a single recording. Picked to comfortably fit inside every
 // downstream constraint: OpenAI Whisper's 25 MB body limit (~100 min of
@@ -38,7 +45,7 @@ function formatMMSS(totalSeconds: number): string {
   return `${m}:${s}`;
 }
 
-export default function Recorder({ onAudio, onLiveTranscript, disabled }: Props) {
+export default function Recorder({ onAudio, onLiveTranscript, onUploadAudio, disabled }: Props) {
   const [state, setState] = useState<"idle" | "recording">("idle");
   const [elapsed, setElapsed] = useState(0);
   const [permError, setPermError] = useState<string>("");
@@ -47,6 +54,19 @@ export default function Recorder({ onAudio, onLiveTranscript, disabled }: Props)
   const chunksRef = useRef<Blob[]>([]);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const liveHandleRef = useRef<ListenHandle | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  function onFilePicked(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // let the same file be re-picked later
+    if (!file) return;
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setPermError("That file is over 25 MB (the transcription limit). Try a shorter clip.");
+      return;
+    }
+    setPermError("");
+    onUploadAudio?.(file);
+  }
 
   const stop = useCallback(() => {
     const r = recorderRef.current;
@@ -155,6 +175,25 @@ export default function Recorder({ onAudio, onLiveTranscript, disabled }: Props)
       >
         {timerLabel}
       </div>
+      {state === "idle" && onUploadAudio && (
+        <>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="audio/*"
+            className="hidden"
+            onChange={onFilePicked}
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={disabled}
+            className="text-xs text-zinc-500 dark:text-zinc-400 underline hover:text-zinc-700 dark:hover:text-zinc-200 disabled:opacity-50"
+          >
+            or upload an audio file
+          </button>
+        </>
+      )}
       {permError && (
         <div className="text-sm text-red-600 max-w-xs text-center">{permError}</div>
       )}

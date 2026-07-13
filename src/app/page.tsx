@@ -331,6 +331,15 @@ function SalescribeApp() {
     }
   }
 
+  // Upload an existing audio file. There's no live browser transcript for a
+  // file, so clear any stale one first (the transcription fallback reads it),
+  // then reuse the same flow as a recording.
+  function onUploadAudio(file: File) {
+    liveTranscriptRef.current = "";
+    setLiveTranscript("");
+    void onAudio(file, file.name);
+  }
+
   async function onAudio(blob: Blob, filename: string) {
     setStatus("transcribing");
     setError("");
@@ -670,6 +679,7 @@ function SalescribeApp() {
                   <Recorder
                     onAudio={onAudio}
                     onLiveTranscript={setLiveTranscript}
+                    onUploadAudio={onUploadAudio}
                     disabled={busy || sampleLoading}
                   />
                   {liveTranscript && (
