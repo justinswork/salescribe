@@ -35,6 +35,8 @@ function CustomersPageContent() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [memos, setMemos] = useState<Memo[]>([]);
   const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState("");
+  const [missingOnly, setMissingOnly] = useState(false);
   const [error, setError] = useState("");
   const [syncing, setSyncing] = useState(false);
   const [geoBusy, setGeoBusy] = useState(false);
@@ -172,6 +174,14 @@ function CustomersPageContent() {
 
   const located = customers.filter((c) => c.lat != null && c.lng != null).length;
   const withAddress = customers.filter((c) => c.address && c.address.trim()).length;
+  const missingCount = customers.length - withAddress;
+
+  const visible = customers.filter((c) => {
+    if (missingOnly && c.address && c.address.trim()) return false;
+    const q = query.trim().toLowerCase();
+    if (q && !c.name.toLowerCase().includes(q)) return false;
+    return true;
+  });
   const geocodable = customers.filter(
     (c) => c.address && c.address.trim() && !(c.lat != null && c.lng != null),
   ).length;
@@ -255,7 +265,7 @@ function CustomersPageContent() {
         </section>
 
         {/* Customer list */}
-        <section className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-4">
+        <section className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-4 flex flex-col gap-3">
           {loading ? (
             <div className="text-sm text-zinc-500 dark:text-zinc-400 italic">Loading…</div>
           ) : customers.length === 0 ? (
@@ -264,17 +274,45 @@ function CustomersPageContent() {
               company your team has recorded a note about.
             </div>
           ) : (
-            <ul className="flex flex-col divide-y divide-zinc-100 dark:divide-zinc-900">
-              {customers.map((c) => (
-                <CustomerRow
-                  key={c.id}
-                  customer={c}
-                  memoCount={memoCounts.get(c.id) ?? 0}
-                  onSaved={handleSaved}
-                  onError={setError}
+            <>
+              <div className="flex flex-wrap items-center gap-3">
+                <input
+                  type="search"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Filter by name…"
+                  className="flex-1 min-w-40 rounded border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-1.5 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400"
                 />
-              ))}
-            </ul>
+                <button
+                  type="button"
+                  onClick={() => setMissingOnly((v) => !v)}
+                  className={`rounded px-3 py-1.5 text-sm ${
+                    missingOnly
+                      ? "bg-amber-600 text-white"
+                      : "border border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-900"
+                  }`}
+                >
+                  Missing address{missingCount ? ` (${missingCount})` : ""}
+                </button>
+              </div>
+              {visible.length === 0 ? (
+                <div className="text-sm text-zinc-500 dark:text-zinc-400 italic">
+                  {missingOnly ? "Every matching customer has an address. 🎉" : "No customers match."}
+                </div>
+              ) : (
+                <ul className="flex flex-col divide-y divide-zinc-100 dark:divide-zinc-900">
+                  {visible.map((c) => (
+                    <CustomerRow
+                      key={c.id}
+                      customer={c}
+                      memoCount={memoCounts.get(c.id) ?? 0}
+                      onSaved={handleSaved}
+                      onError={setError}
+                    />
+                  ))}
+                </ul>
+              )}
+            </>
           )}
         </section>
       </main>
