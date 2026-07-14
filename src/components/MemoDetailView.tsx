@@ -1,15 +1,26 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import ExtractionView from "@/components/ExtractionView";
 import Avatar from "@/components/Avatar";
 import VisibilityPill from "@/components/VisibilityPill";
 import MemoEditor from "@/components/MemoEditor";
 import MemoHistoryView, { ago } from "@/components/MemoHistoryView";
 import { useAuth } from "@/lib/AuthContext";
-import { getMemoAudioUrl, updateMemo } from "@/lib/storage";
+import { getMemoAudioUrl, updateMemo, deleteMemo, loadMemos } from "@/lib/storage";
 import { authedFetch, apiError } from "@/lib/api";
 import type { Extraction, Memo } from "@/lib/schema";
+
+function memoLabel(m: Memo): string {
+  return (
+    m.extraction.deal?.company ||
+    m.extraction.contacts[0]?.company ||
+    m.extraction.contacts[0]?.name ||
+    m.extraction.summary.slice(0, 50) ||
+    "(untitled)"
+  );
+}
 
 function ClockIcon() {
   return (
@@ -42,6 +53,7 @@ export default function MemoDetailView({
   onUpdated?: (m: Memo) => void;
 }) {
   const { user, org, orgGrounding, roster } = useAuth();
+  const router = useRouter();
   const authorMember = memo.authorUid ? roster[memo.authorUid] : undefined;
   const [editing, setEditing] = useState(false);
   const [tab, setTab] = useState<"details" | "history">("details");
@@ -51,6 +63,10 @@ export default function MemoDetailView({
   const [companyEditing, setCompanyEditing] = useState(false);
   const [companyDraft, setCompanyDraft] = useState("");
   const [savingCompany, setSavingCompany] = useState(false);
+  const [mergeOpen, setMergeOpen] = useState(false);
+  const [mergeCandidates, setMergeCandidates] = useState<Memo[] | null>(null);
+  const [mergeQuery, setMergeQuery] = useState("");
+  const [mergeBusy, setMergeBusy] = useState(false);
 
   // Resolve a playable URL for the original recording, if this memo has one.
   useEffect(() => {
@@ -150,6 +166,52 @@ export default function MemoDetailView({
     })();
   }
 
+  // Merge this memo into another (for afterthought/second-clip recordings that
+  // landed as their own memo). Appends this transcript to the target, keeps the
+  // target's audio + fields, then deletes this one and navigates to the target.
+  // Stopgap until memos support multiple audio recordings.
+  function openMerge() {
+    setMergeOpen(true);
+    setActionError("");
+    if (mergeCandidates === null) {
+      loadMemos()
+        .then((all) => setMergeCandidates(all.filter((m) => m.id !== memo.id)))
+        .catch((e) => setActionError(e instanceof Error ? e.message : String(e)));
+    }
+  }
+
+  function performMerge(target: Memo) {
+    void (async () => {
+      setMergeBusy(true);
+      setActionError("");
+      try {
+        const when = new Date(memo.created_iso).toLocaleString();
+        const combined =
+          `${target.transcript.trim()}\n\n` +
+          `— Merged from memo #${memo.seq ?? memo.id} (recorded ${when}) —\n` +
+          memo.transcript.trim();
+        await updateMemo(target, { ...target, transcript: combined });
+        await deleteMemo(memo.id);
+        // Target keeps its own structured fields; the merged-in transcript is
+        // available to re-extract from if the user wants it folded in.
+        router.push(`/memos/${target.seq ?? target.id}`);
+      } catch (e) {
+        setActionError(e instanceof Error ? e.message : String(e));
+        setMergeBusy(false);
+      }
+    })();
+  }
+
+  const mergeMatches = (mergeCandidates ?? []).filter((m) => {
+    const q = mergeQuery.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      memoLabel(m).toLowerCase().includes(q) ||
+      (m.seq != null && `#${m.seq}`.includes(q)) ||
+      m.extraction.summary.toLowerCase().includes(q)
+    );
+  });
+
   if (editing) {
     return (
       <MemoEditor
@@ -211,6 +273,14 @@ export default function MemoDetailView({
               title="Regenerate the structured fields from the transcript"
             >
               {reextracting ? "Re-extracting…" : "Re-extract"}
+            </button>
+            <button
+              type="button"
+              onClick={openMerge}
+              className="rounded border border-zinc-300 dark:border-zinc-700 px-3 py-1.5 text-sm text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-900"
+              title="Merge this memo's recording into another memo"
+            >
+              Merge into…
             </button>
             <button
               type="button"
@@ -291,6 +361,78 @@ export default function MemoDetailView({
           )}
         </div>
       </section>
+
+      {/* Merge picker */}
+      {mergeOpen && (
+        <section className="rounded-lg border border-blue-300 dark:border-blue-900 bg-blue-50/50 dark:bg-blue-950/20 p-4">
+          <div className="flex items-center justify-between mb-1">
+            <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+              Merge this memo into another
+            </h3>
+            <button
+              type="button"
+              onClick={() => setMergeOpen(false)}
+              disabled={mergeBusy}
+              className="text-xs text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"
+            >
+              Cancel
+            </button>
+          </div>
+          <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-3">
+            Pick the memo to keep. This memo&apos;s transcript is appended to it, then this memo (#{memo.seq ?? "?"}) is deleted. The kept memo&apos;s audio and fields stay; re-extract it afterward if you want the merged details folded in.
+          </p>
+          <input
+            type="search"
+            value={mergeQuery}
+            onChange={(e) => setMergeQuery(e.target.value)}
+            placeholder="Search memos by company, #, or summary…"
+            className="w-full rounded border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 mb-3"
+          />
+          {mergeCandidates === null ? (
+            <div className="text-sm text-zinc-500 dark:text-zinc-400 italic">Loading memos…</div>
+          ) : mergeMatches.length === 0 ? (
+            <div className="text-sm text-zinc-500 dark:text-zinc-400 italic">No other memos match.</div>
+          ) : (
+            <ul className="flex flex-col gap-1.5 max-h-80 overflow-y-auto">
+              {mergeMatches.slice(0, 50).map((m) => (
+                <li key={m.id}>
+                  <button
+                    type="button"
+                    disabled={mergeBusy}
+                    onClick={() => {
+                      if (
+                        confirm(
+                          `Merge memo #${memo.seq ?? memo.id} into "${memoLabel(m)}" (#${m.seq ?? "?"})? This deletes memo #${memo.seq ?? memo.id}.`,
+                        )
+                      ) {
+                        performMerge(m);
+                      }
+                    }}
+                    className="w-full flex items-center justify-between gap-3 rounded border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-900 disabled:opacity-50"
+                  >
+                    <span className="min-w-0 flex items-center gap-2">
+                      {typeof m.seq === "number" && (
+                        <span className="font-mono text-[11px] font-semibold text-zinc-400 dark:text-zinc-500 shrink-0">
+                          #{m.seq}
+                        </span>
+                      )}
+                      <span className="font-medium text-zinc-900 dark:text-zinc-100 truncate">
+                        {memoLabel(m)}
+                      </span>
+                    </span>
+                    <span className="text-xs text-zinc-400 dark:text-zinc-500 shrink-0 tabular-nums">
+                      {new Date(m.created_iso).toLocaleDateString()}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {mergeBusy && (
+            <div className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">Merging…</div>
+          )}
+        </section>
+      )}
 
       {/* Tabs */}
       <div className="flex items-center gap-1 border-b border-zinc-200 dark:border-zinc-800">
