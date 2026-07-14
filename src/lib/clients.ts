@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
+import type { AzureMapsConfig } from "./azure-maps";
 
 // Read a key from process.env, falling back to .env.local on disk if the env var
 // is missing OR explicitly empty. The fallback only matters for local dev under
@@ -49,6 +50,20 @@ export function getOpenAI(): OpenAI {
     _openai = new OpenAI({ apiKey });
   }
   return _openai;
+}
+
+// Azure Maps (Entra) credentials from the environment (.env.local / platform
+// env). The fallback for local dev + service callers, the same way getAnthropic()
+// backstops bring-your-own-key orgs. Returns undefined unless all four are set.
+export function azureMapsCredsFromEnv(): AzureMapsConfig | undefined {
+  const tenantId = readKey("AZURE_MAPS_TENANT_ID");
+  const clientId = readKey("AZURE_MAPS_CLIENT_ID");
+  const clientSecret = readKey("AZURE_MAPS_CLIENT_SECRET");
+  const mapsClientId = readKey("AZURE_MAPS_ACCOUNT_CLIENT_ID");
+  if (tenantId && clientId && clientSecret && mapsClientId) {
+    return { tenantId, clientId, clientSecret, mapsClientId };
+  }
+  return undefined;
 }
 
 // Per-call clients built from a caller-supplied key (used for bring-your-own-key

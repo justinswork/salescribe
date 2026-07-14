@@ -21,7 +21,7 @@ import {
 } from "@/lib/org";
 import type { Invite, OrgMember } from "@/lib/schema";
 
-type KeyStatus = { hasAnthropic: boolean; hasOpenai: boolean };
+type KeyStatus = { hasAnthropic: boolean; hasOpenai: boolean; hasAzureMaps: boolean };
 
 export default function TeamPage() {
   return (
@@ -49,6 +49,10 @@ function TeamPageContent() {
   const [keyStatus, setKeyStatus] = useState<KeyStatus | null>(null);
   const [anthropicKey, setAnthropicKey] = useState("");
   const [openaiKey, setOpenaiKey] = useState("");
+  const [azTenant, setAzTenant] = useState("");
+  const [azClientId, setAzClientId] = useState("");
+  const [azClientSecret, setAzClientSecret] = useState("");
+  const [azMapsClientId, setAzMapsClientId] = useState("");
   const [savingKeys, setSavingKeys] = useState(false);
   const [keyNotice, setKeyNotice] = useState("");
 
@@ -119,9 +123,19 @@ function TeamPageContent() {
       setKeyNotice("");
       setError("");
       try {
-        const body: { anthropic?: string; openai?: string } = {};
+        const body: {
+          anthropic?: string;
+          openai?: string;
+          azureMaps?: { tenantId?: string; clientId?: string; clientSecret?: string; mapsClientId?: string };
+        } = {};
         if (anthropicKey.trim()) body.anthropic = anthropicKey.trim();
         if (openaiKey.trim()) body.openai = openaiKey.trim();
+        const az: { tenantId?: string; clientId?: string; clientSecret?: string; mapsClientId?: string } = {};
+        if (azTenant.trim()) az.tenantId = azTenant.trim();
+        if (azClientId.trim()) az.clientId = azClientId.trim();
+        if (azClientSecret.trim()) az.clientSecret = azClientSecret.trim();
+        if (azMapsClientId.trim()) az.mapsClientId = azMapsClientId.trim();
+        if (Object.keys(az).length > 0) body.azureMaps = az;
         if (Object.keys(body).length === 0) {
           setKeyNotice("Enter a key to save.");
           return;
@@ -135,6 +149,10 @@ function TeamPageContent() {
         setKeyStatus((await r.json()) as KeyStatus);
         setAnthropicKey("");
         setOpenaiKey("");
+        setAzTenant("");
+        setAzClientId("");
+        setAzClientSecret("");
+        setAzMapsClientId("");
         setKeyNotice("Saved.");
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
@@ -449,6 +467,52 @@ function TeamPageContent() {
                   placeholder={keyStatus?.hasOpenai ? "configured — enter a new key to replace" : "sk-…"}
                   className="w-full rounded border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400"
                 />
+              </div>
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                    Azure Maps (Microsoft Entra)
+                  </span>
+                  <KeyBadge state={keyStatus?.hasAzureMaps} optional />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <input
+                    type="text"
+                    autoComplete="off"
+                    value={azTenant}
+                    onChange={(e) => setAzTenant(e.target.value)}
+                    placeholder="Tenant ID"
+                    className="w-full rounded border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400"
+                  />
+                  <input
+                    type="text"
+                    autoComplete="off"
+                    value={azClientId}
+                    onChange={(e) => setAzClientId(e.target.value)}
+                    placeholder="Client ID (app registration)"
+                    className="w-full rounded border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400"
+                  />
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    value={azClientSecret}
+                    onChange={(e) => setAzClientSecret(e.target.value)}
+                    placeholder={keyStatus?.hasAzureMaps ? "client secret configured — enter to replace" : "Client secret"}
+                    className="w-full rounded border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400"
+                  />
+                  <input
+                    type="text"
+                    autoComplete="off"
+                    value={azMapsClientId}
+                    onChange={(e) => setAzMapsClientId(e.target.value)}
+                    placeholder="Maps account Client ID (x-ms-client-id)"
+                    className="w-full rounded border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400"
+                  />
+                </div>
+                <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                  Powers geocoding customers for the map. All four required; the client secret is stored
+                  securely and never shown again. Leave a field blank to keep its current value.
+                </p>
               </div>
               <div className="flex items-center gap-3">
                 <button

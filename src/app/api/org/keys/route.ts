@@ -37,7 +37,15 @@ export async function POST(req: NextRequest) {
   if (!(await isOrgAdmin(who.orgId, who.uid))) {
     return Response.json({ error: "Only an admin can set API keys." }, { status: 403 });
   }
-  const body = (await req.json()) as { anthropic?: string; openai?: string };
-  await setOrgKeys(who.orgId, { anthropic: body.anthropic, openai: body.openai }, who.uid);
+  const body = (await req.json()) as {
+    anthropic?: string;
+    openai?: string;
+    azureMaps?: { tenantId?: string; clientId?: string; clientSecret?: string; mapsClientId?: string };
+  };
+  await setOrgKeys(
+    who.orgId,
+    { anthropic: body.anthropic, openai: body.openai, azureMaps: body.azureMaps },
+    who.uid,
+  );
   return Response.json(await orgKeyStatus(who.orgId));
 }
