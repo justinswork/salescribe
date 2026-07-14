@@ -14,6 +14,16 @@ service firebase.storage {
       allow write: if request.auth != null && request.auth.uid == uid;
     }
 
+    // Customer logos: any org member may read and upload (customers are shared,
+    // member-editable records — same as their Firestore rule).
+    match /orgs/{orgId}/customers/{customerId}/{file=**} {
+      function isCustomerMember() {
+        return request.auth != null &&
+          firestore.exists(/databases/(default)/documents/orgs/$(orgId)/members/$(request.auth.uid));
+      }
+      allow read, write: if isCustomerMember();
+    }
+
     match /orgs/{orgId}/memos/{memoId}/{file=**} {
       function isMember() {
         return request.auth != null &&

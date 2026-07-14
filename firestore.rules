@@ -99,6 +99,15 @@ service cloud.firestore {
         );
       }
 
+      // Customer (account) records: shared, geocodable company profiles that a
+      // memo's location resolves to. Org-shared reference data — any member may
+      // read and upsert (reps add/correct addresses); only admins delete.
+      match /customers/{id} {
+        allow read: if isMember(orgId);
+        allow create, update: if isMember(orgId);
+        allow delete: if isAdmin(orgId);
+      }
+
       // Per-org counters (e.g. the memo sequence number). Any member may read
       // and increment; the value is low-stakes and set in a client transaction.
       match /counters/{name} {

@@ -28,6 +28,7 @@ import {
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { getAuthInstance, getDbInstance, getStorageInstance } from "./firebase";
 import { currentOrgId } from "./org";
+import { upsertCustomer } from "./customers";
 import type { Extraction, Memo, MemoChange, MemoRevision, MemoVisibility } from "./schema";
 
 const MAX_RELATED = 3;
@@ -99,7 +100,20 @@ export async function saveMemo(memo: Memo): Promise<Memo> {
     ],
   };
   await setDoc(doc(memosCollection(), memo.id), toSave);
+  await syncCustomerFor(toSave);
   return toSave;
+}
+
+// Keep a customer record in step with a memo's company so a memo can always
+// link to its customer. Best-effort: never blocks or fails a memo save.
+async function syncCustomerFor(memo: Memo): Promise<void> {
+  const company = memo.extraction.deal?.company?.trim();
+  if (!company) return;
+  try {
+    await upsertCustomer({ name: company });
+  } catch {
+    // non-fatal — the Customers page can also sync from memos in bulk
+  }
 }
 
 // Human-readable value for a field, for the diff view.
@@ -170,6 +184,7 @@ export async function updateMemo(previous: Memo, updated: Memo): Promise<Memo> {
     revisions: [...(updated.revisions ?? []), revision],
   };
   await setDoc(doc(memosCollection(), updated.id), toSave);
+  await syncCustomerFor(toSave);
   return toSave;
 }
 

@@ -310,6 +310,50 @@ export type Memo = {
 };
 
 // -------------------------------------------------------------------------
+// Customers (accounts). The canonical record for a company the team visits —
+// and the single place a memo's location comes from. On a memo a company is
+// only free text (extraction.deal.company); a Customer lifts that into a
+// shared, geocodable entity so "which site is this?" is resolved ONCE here
+// rather than re-guessed per memo. Lives at orgs/{orgId}/customers/{id}, where
+// the doc id is the normalized company name (see normalizeCompany in
+// customers.ts) so upserts are idempotent and a memo resolves to its customer
+// by name — no stored foreign key needed for a first cut.
+// -------------------------------------------------------------------------
+
+export type GeocodeStatus = "none" | "pending" | "ok" | "failed";
+
+export type Customer = {
+  id: string; // normalized-name slug; also the Firestore doc id
+  name: string; // canonical display name
+  // Other spellings seen on memos that map to this same customer, so the
+  // name→customer lookup absorbs minor variations without duplicate records.
+  aliases?: string[];
+  // Street address — the good geocoding input. Sourced from CRM import, the
+  // OneNote manifests, or manual entry. null until we have one.
+  address?: string | null;
+  // Resolved coordinates (null until geocoded). Populated once per customer.
+  lat?: number | null;
+  lng?: number | null;
+  geocode?: {
+    status: GeocodeStatus;
+    formattedAddress?: string;
+    provider?: string; // e.g. "google" | "mapbox"
+    query?: string; // exactly what we sent to the geocoder
+    at?: string; // ISO timestamp of the lookup
+  };
+  // Territory owner — the salesperson this account belongs to. Powers the
+  // "filter to my territory" map view later. Unset = unassigned.
+  ownerUid?: string | null;
+  // Free-text notes about the account (curated on the customer page).
+  notes?: string | null;
+  // Company logo: a tokenized Storage download URL (uploaded on the customer
+  // page), rendered wherever the account appears.
+  logoUrl?: string | null;
+  created_iso: string;
+  updated_iso: string;
+};
+
+// -------------------------------------------------------------------------
 // Organizations (team accounts). A memo lives under orgs/{orgId}/memos and is
 // visible to every member of that org unless marked private. See src/lib/org.ts
 // for how a user resolves to an org, and firestore.rules for enforcement.

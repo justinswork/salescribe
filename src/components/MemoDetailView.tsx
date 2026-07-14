@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import ExtractionView from "@/components/ExtractionView";
 import Avatar from "@/components/Avatar";
 import Highlight from "@/components/Highlight";
@@ -10,8 +11,9 @@ import MemoEditor from "@/components/MemoEditor";
 import MemoHistoryView, { ago } from "@/components/MemoHistoryView";
 import { useAuth } from "@/lib/AuthContext";
 import { getMemoAudioUrl, updateMemo, deleteMemo, loadMemos } from "@/lib/storage";
+import { getCustomerByCompany, customerId } from "@/lib/customers";
 import { authedFetch, apiError } from "@/lib/api";
-import type { Extraction, Memo } from "@/lib/schema";
+import type { Customer, Extraction, Memo } from "@/lib/schema";
 
 function memoLabel(m: Memo): string {
   return (
@@ -72,6 +74,27 @@ export default function MemoDetailView({
   const { user, org, orgGrounding, roster } = useAuth();
   const router = useRouter();
   const authorMember = memo.authorUid ? roster[memo.authorUid] : undefined;
+
+  const company = memo.extraction.deal?.company?.trim() || "";
+  const [customer, setCustomer] = useState<Customer | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      if (!company) {
+        if (!cancelled) setCustomer(null);
+        return;
+      }
+      try {
+        const c = await getCustomerByCompany(company);
+        if (!cancelled) setCustomer(c);
+      } catch {
+        if (!cancelled) setCustomer(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [company]);
   const [editing, setEditing] = useState(false);
   const [tab, setTab] = useState<"details" | "history">("details");
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
@@ -379,6 +402,43 @@ export default function MemoDetailView({
           )}
         </div>
       </section>
+
+      {/* Customer — link to the account profile, with a live snippet */}
+      {company && (
+        <section className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-4">
+          <div className="flex items-center gap-3">
+            {customer?.logoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={customer.logoUrl}
+                alt=""
+                className="h-10 w-10 rounded object-contain bg-white shrink-0"
+              />
+            ) : (
+              <div className="h-10 w-10 rounded bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-sm font-semibold text-zinc-400 dark:text-zinc-500 shrink-0">
+                {(customer?.name || company).slice(0, 1).toUpperCase()}
+              </div>
+            )}
+            <div className="min-w-0 flex-1">
+              <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                Customer
+              </div>
+              <div className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">
+                {customer?.name || company}
+              </div>
+              {customer?.address && (
+                <div className="text-xs text-zinc-500 dark:text-zinc-400 truncate">{customer.address}</div>
+              )}
+            </div>
+            <Link
+              href={`/customers/${customerId(company)}`}
+              className="shrink-0 rounded border border-zinc-300 dark:border-zinc-700 px-3 py-1.5 text-sm text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-900"
+            >
+              View customer →
+            </Link>
+          </div>
+        </section>
+      )}
 
       {/* Merge picker */}
       {mergeOpen && (
