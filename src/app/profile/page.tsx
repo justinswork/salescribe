@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import AuthGuard from "@/components/AuthGuard";
 import AccountMenu from "@/components/AccountMenu";
@@ -8,6 +8,7 @@ import ThemeToggle from "@/components/ThemeToggle";
 import Avatar, { AVATAR_COLORS } from "@/components/Avatar";
 import { useAuth } from "@/lib/AuthContext";
 import { updateUserProfile } from "@/lib/org";
+import { uploadAvatar } from "@/lib/storage";
 
 export default function ProfilePage() {
   return (
@@ -26,8 +27,33 @@ function ProfilePageContent() {
   const [color, setColor] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
+
+  function onPhotoPick(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !user) return;
+    if (file.size > 5 * 1024 * 1024) {
+      setError("That image is over 5 MB — pick a smaller one.");
+      return;
+    }
+    const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
+    void (async () => {
+      setUploadingPhoto(true);
+      setError("");
+      try {
+        const url = await uploadAvatar(user.uid, file, ext);
+        setPhotoURL(url);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setUploadingPhoto(false);
+      }
+    })();
+  }
 
   // Seed the form from the loaded profile / auth once.
   useEffect(() => {
@@ -139,19 +165,38 @@ function ProfilePageContent() {
             />
           </label>
 
-          <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Photo URL (optional)</span>
-            <input
-              type="url"
-              value={photoURL}
-              onChange={(e) => setPhotoURL(e.target.value)}
-              placeholder="https://…"
-              className="w-full rounded border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400"
-            />
+          <div className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Photo (optional)</span>
+            <div className="flex items-center gap-3">
+              <input
+                ref={photoInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={onPhotoPick}
+              />
+              <button
+                type="button"
+                onClick={() => photoInputRef.current?.click()}
+                disabled={uploadingPhoto}
+                className="rounded border border-zinc-300 dark:border-zinc-700 px-3 py-2 text-sm text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-900 disabled:opacity-50"
+              >
+                {uploadingPhoto ? "Uploading…" : photoURL ? "Change photo" : "Upload photo"}
+              </button>
+              {photoURL && (
+                <button
+                  type="button"
+                  onClick={() => setPhotoURL("")}
+                  className="text-xs text-zinc-500 dark:text-zinc-400 underline hover:text-zinc-700 dark:hover:text-zinc-200"
+                >
+                  Remove
+                </button>
+              )}
+            </div>
             <span className="text-[11px] text-zinc-400 dark:text-zinc-500">
-              A photo takes priority over the color below.
+              Upload an image (max 5 MB). A photo takes priority over the color below.
             </span>
-          </label>
+          </div>
 
           <div className="flex flex-col gap-2">
             <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Avatar color</span>

@@ -217,6 +217,15 @@ export async function getMemoAudioUrl(audioPath: string): Promise<string> {
   return getDownloadURL(storageRef(getStorageInstance(), audioPath));
 }
 
+// Upload a user's avatar image to avatars/{uid}/photo.<ext> and return a
+// download URL (a tokenized URL that teammates' browsers can load directly,
+// so it becomes the user's photoURL everywhere).
+export async function uploadAvatar(uid: string, blob: Blob, ext: string): Promise<string> {
+  const ref = storageRef(getStorageInstance(), `avatars/${uid}/photo.${ext}`);
+  await uploadBytes(ref, blob, { contentType: blob.type || undefined });
+  return getDownloadURL(ref);
+}
+
 // Flip a memo between shared and private after the fact. Rules only permit this
 // for the memo's author.
 export async function setMemoVisibility(id: string, visibility: MemoVisibility): Promise<void> {
