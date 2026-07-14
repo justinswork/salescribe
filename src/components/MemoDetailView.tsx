@@ -22,6 +22,19 @@ function memoLabel(m: Memo): string {
   );
 }
 
+type Deal = NonNullable<Extraction["deal"]>;
+const EMPTY_DEAL: Deal = {
+  company: null,
+  prospect_name: null,
+  stated_problem: null,
+  budget_signals: null,
+  decision_makers: null,
+  objections: null,
+  competitors: null,
+  next_step: null,
+  next_step_due_iso: null,
+};
+
 function ClockIcon() {
   return (
     <svg
@@ -96,7 +109,7 @@ export default function MemoDetailView({
     if (!onUpdated) return;
     if (
       !confirm(
-        "Re-run extraction from the transcript? This replaces the current structured fields (summary, deal, contacts, events, reminders).",
+        "Re-run extraction from the transcript? This regenerates the structured fields (summary, contacts, events, reminders, deal), but keeps the Company you set.",
       )
     ) {
       return;
@@ -118,7 +131,18 @@ export default function MemoDetailView({
         });
         if (!r.ok) throw new Error(await apiError(r, "Re-extraction failed"));
         const data = (await r.json()) as { extraction: Extraction };
-        const saved = await updateMemo(memo, { ...memo, extraction: data.extraction });
+        // Company is a user-curated field (it groups memos and may not appear
+        // in the transcript), so preserve a previously set company rather than
+        // let re-extraction clear or overwrite it. Only adopt an extracted
+        // company when none was set.
+        const prevCompany = memo.extraction.deal?.company ?? null;
+        const next = data.extraction;
+        const deal: Deal | null = next.deal
+          ? { ...next.deal, company: prevCompany ?? next.deal.company }
+          : prevCompany
+            ? { ...EMPTY_DEAL, company: prevCompany }
+            : null;
+        const saved = await updateMemo(memo, { ...memo, extraction: { ...next, deal } });
         onUpdated(saved);
       } catch (e) {
         setActionError(e instanceof Error ? e.message : String(e));
@@ -137,17 +161,7 @@ export default function MemoDetailView({
       setSavingCompany(true);
       setActionError("");
       try {
-        const base = memo.extraction.deal ?? {
-          company: null,
-          prospect_name: null,
-          stated_problem: null,
-          budget_signals: null,
-          decision_makers: null,
-          objections: null,
-          competitors: null,
-          next_step: null,
-          next_step_due_iso: null,
-        };
+        const base = memo.extraction.deal ?? EMPTY_DEAL;
         const updated: Memo = {
           ...memo,
           extraction: {
