@@ -24,7 +24,7 @@ export default function MemosPage() {
 }
 
 function MemosPageContent() {
-  const { user, profile } = useAuth();
+  const { user, profile, roster } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -356,15 +356,16 @@ function MemosPageContent() {
                       </button>
                       {(() => {
                         const mine = Boolean(m.authorUid && m.authorUid === user?.uid);
-                        const authorName = m.authorName || "Teammate";
+                        const member = m.authorUid ? roster[m.authorUid] : undefined;
+                        const authorName = m.authorName || member?.displayName || "Teammate";
                         return (
                           <Avatar
                             size={36}
                             name={authorName}
                             seed={m.authorUid || authorName}
                             label={mine ? "You" : authorName}
-                            photoURL={mine ? user?.photoURL : undefined}
-                            color={mine ? profile?.avatarColor : undefined}
+                            photoURL={(mine ? user?.photoURL : member?.photoURL) || undefined}
+                            color={(mine ? profile?.avatarColor : member?.avatarColor) || undefined}
                           />
                         );
                       })()}

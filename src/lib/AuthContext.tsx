@@ -21,7 +21,7 @@ import {
   type OrgContext,
   type OrgGrounding,
 } from "./org";
-import type { UserProfile } from "./schema";
+import type { OrgMember, UserProfile } from "./schema";
 
 export type ProviderId = "google" | "microsoft";
 
@@ -39,6 +39,9 @@ type AuthState = {
   profile: UserProfile | null;
   // Client-built grounding (glossary + roster) passed to the AI routes.
   orgGrounding: OrgGrounding | null;
+  // The org roster keyed by uid, so any author's avatar (photo/color/name) can
+  // be rendered from their authorUid without reading their private profile.
+  roster: Record<string, OrgMember>;
   // Re-resolve the current user's org + profile (after joining via invite, a
   // role change, or a profile edit) so the app reflects it without a reload.
   reloadOrg: () => Promise<void>;
@@ -62,6 +65,7 @@ const AuthContext = createContext<AuthState>({
   orgLoading: false,
   profile: null,
   orgGrounding: null,
+  roster: {},
   reloadOrg: async () => {},
   signIn: async () => {},
   signInWithEmail: async () => {},
@@ -115,6 +119,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [orgLoading, setOrgLoading] = useState(false);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [orgGrounding, setOrgGrounding] = useState<OrgGrounding | null>(null);
+  const [roster, setRoster] = useState<Record<string, OrgMember>>({});
 
   useEffect(() => {
     return onAuthStateChanged(getAuthInstance(), (u) => {
@@ -126,18 +131,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setOrg(null);
         setProfile(null);
         setOrgGrounding(null);
+        setRoster({});
       }
       setLoading(false);
     });
   }, []);
 
-  // Read the glossary + roster and build the AI grounding. Best-effort.
-  async function loadGrounding(o: OrgContext): Promise<OrgGrounding | null> {
+  // Read the glossary + roster once: build the AI grounding and a uid→member
+  // map for rendering author avatars. Best-effort (returns empties on failure).
+  async function loadOrgAux(
+    o: OrgContext,
+  ): Promise<{ grounding: OrgGrounding | null; roster: Record<string, OrgMember> }> {
     try {
       const [g, members] = await Promise.all([getGlossary(o.id), listMembers(o.id)]);
-      return buildOrgGrounding(o.name, g, members.map((m) => m.displayName));
+      const grounding = buildOrgGrounding(o.name, g, members.map((m) => m.displayName));
+      const map = Object.fromEntries(members.map((m) => [m.uid, m]));
+      return { grounding, roster: map };
     } catch {
-      return null;
+      return { grounding: null, roster: {} };
     }
   }
 
@@ -155,8 +166,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!cancelled) setOrg(resolved);
         const p = await getUserProfile(user.uid);
         if (!cancelled) setProfile(p);
-        const grounding = await loadGrounding(resolved);
-        if (!cancelled) setOrgGrounding(grounding);
+        const { grounding, roster: map } = await loadOrgAux(resolved);
+        if (!cancelled) {
+          setOrgGrounding(grounding);
+          setRoster(map);
+        }
       } catch (e) {
         if (!cancelled) setAuthError(e instanceof Error ? e.message : String(e));
       } finally {
@@ -174,7 +188,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const resolved = await resolveOrg(current);
     setOrg(resolved);
     setProfile(await getUserProfile(current.uid));
-    setOrgGrounding(await loadGrounding(resolved));
+    const { grounding, roster: map } = await loadOrgAux(resolved);
+    setOrgGrounding(grounding);
+    setRoster(map);
   }
 
   async function signIn(providerId: ProviderId = "google") {
@@ -269,6 +285,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         orgLoading,
         profile,
         orgGrounding,
+        roster,
         reloadOrg,
         signIn,
         signInWithEmail,
