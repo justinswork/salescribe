@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import ExtractionView from "@/components/ExtractionView";
 import Avatar from "@/components/Avatar";
+import Highlight from "@/components/Highlight";
 import VisibilityPill from "@/components/VisibilityPill";
 import MemoEditor from "@/components/MemoEditor";
 import MemoHistoryView, { ago } from "@/components/MemoHistoryView";
@@ -61,9 +62,12 @@ function ClockIcon() {
 export default function MemoDetailView({
   memo,
   onUpdated,
+  highlight = [],
 }: {
   memo: Memo;
   onUpdated?: (m: Memo) => void;
+  // Search terms to keep highlighted in the memo's content.
+  highlight?: string[];
 }) {
   const { user, org, orgGrounding, roster } = useAuth();
   const router = useRouter();
@@ -495,7 +499,7 @@ export default function MemoDetailView({
               Transcript
             </h2>
             <p className="text-sm whitespace-pre-wrap text-zinc-900 dark:text-zinc-100">
-              {memo.transcript}
+              <Highlight text={memo.transcript} terms={highlight} />
             </p>
           </section>
 
@@ -507,7 +511,7 @@ export default function MemoDetailView({
               </div>
             </section>
           ) : (
-            <ExtractionView extraction={memo.extraction} />
+            <ExtractionView extraction={memo.extraction} highlight={highlight} />
           )}
 
           {memo.chat.length > 0 && (

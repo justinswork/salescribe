@@ -11,6 +11,7 @@ import Avatar from "@/components/Avatar";
 import VisibilityPill from "@/components/VisibilityPill";
 import { useAuth } from "@/lib/AuthContext";
 import { loadMemos } from "@/lib/storage";
+import { parseQuery, matchMemo } from "@/lib/search";
 import type { Memo } from "@/lib/schema";
 
 const PAGE_SIZE = 25;
@@ -28,6 +29,9 @@ function MemosPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
+  const authorNameOf = (m: Memo) =>
+    m.authorName || (m.authorUid ? roster[m.authorUid]?.displayName ?? "" : "");
+
   // URL is the source of truth for query + page so back/forward navigation and
   // sharing both work. The text input keeps a local mirror for snappy typing
   // and debounces URL updates.
@@ -35,6 +39,7 @@ function MemosPageContent() {
   const urlPage = Math.max(1, Number(searchParams.get("page") ?? "1"));
   const urlStart = searchParams.get("start") ?? ""; // YYYY-MM-DD
   const urlEnd = searchParams.get("end") ?? ""; // YYYY-MM-DD
+  const urlAuthor = searchParams.get("author") ?? ""; // authorUid
 
   const [memos, setMemos] = useState<Memo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -63,17 +68,19 @@ function MemosPageContent() {
   // Page resets to 1 when filters change (the previous page index isn't
   // meaningful for a different filtered list); page nav passes resetPage=false.
   function pushUrl(
-    overrides: { q?: string; start?: string; end?: string; page?: number } = {},
+    overrides: { q?: string; start?: string; end?: string; author?: string; page?: number } = {},
     resetPage = true,
   ) {
     const params = new URLSearchParams();
     const q = overrides.q !== undefined ? overrides.q : urlQuery;
     const start = overrides.start !== undefined ? overrides.start : urlStart;
     const end = overrides.end !== undefined ? overrides.end : urlEnd;
+    const author = overrides.author !== undefined ? overrides.author : urlAuthor;
     const nextPage = overrides.page !== undefined ? overrides.page : resetPage ? 1 : urlPage;
     if (q) params.set("q", q);
     if (start) params.set("start", start);
     if (end) params.set("end", end);
+    if (author) params.set("author", author);
     if (nextPage > 1) params.set("page", String(nextPage));
     const qs = params.toString();
     router.replace(qs ? `/memos?${qs}` : "/memos", { scroll: false });
@@ -107,31 +114,25 @@ function MemosPageContent() {
       const endInclusive = `${urlEnd}T23:59:59.999Z`;
       result = result.filter((m) => m.created_iso <= endInclusive);
     }
-    // Text search.
-    if (urlQuery.trim()) {
-      const q = urlQuery.toLowerCase();
-      result = result.filter((m) => {
-        const haystack = [
-          m.seq != null ? `#${m.seq}` : null,
-          m.seq != null ? String(m.seq) : null,
-          m.extraction.deal?.company,
-          m.extraction.deal?.prospect_name,
-          m.extraction.deal?.stated_problem,
-          m.extraction.deal?.next_step,
-          ...m.extraction.contacts.flatMap((c) => [c.name, c.company, c.role]),
-          m.extraction.summary,
-          m.transcript,
-        ]
-          .filter(Boolean)
-          .join(" ")
-          .toLowerCase();
-        return haystack.includes(q);
-      });
+    // Salesperson.
+    if (urlAuthor) {
+      result = result.filter((m) => m.authorUid === urlAuthor);
+    }
+    // Field-scoped text search (AND-ed conditions).
+    const conditions = parseQuery(urlQuery);
+    if (conditions.length) {
+      result = result.filter((m) => matchMemo(m, conditions, authorNameOf(m)));
     }
     return result;
-  }, [memos, urlQuery, urlStart, urlEnd]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [memos, urlQuery, urlStart, urlEnd, urlAuthor, roster]);
 
-  const hasAnyFilter = Boolean(urlQuery || urlStart || urlEnd);
+  const hasAnyFilter = Boolean(urlQuery || urlStart || urlEnd || urlAuthor);
+
+  // Salespeople for the dropdown, from the org roster.
+  const salespeople = Object.values(roster).sort((a, b) =>
+    a.displayName.localeCompare(b.displayName),
+  );
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const page = Math.min(urlPage, totalPages);
@@ -256,13 +257,18 @@ function MemosPageContent() {
           </Link>
         </div>
 
-        <input
-          type="search"
-          value={inputValue}
-          onChange={(e) => setInputValue(e.target.value)}
-          placeholder="Search by company, contact, summary, or transcript…"
-          className="w-full rounded border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400"
-        />
+        <div className="flex flex-col gap-1">
+          <input
+            type="search"
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            placeholder='Search — try company:Element transcript:ObserVIEW'
+            className="w-full rounded border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400"
+          />
+          <span className="text-[11px] text-zinc-400 dark:text-zinc-500">
+            Target a field with <code>company:</code> <code>contact:</code> <code>summary:</code> <code>transcript:</code> (also <code>=</code> / <code>contains</code>). Quote phrases: <code>company:&quot;Element Materials&quot;</code>. Bare terms match anything.
+          </span>
+        </div>
 
         <div className="flex flex-wrap items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400">
           <label className="flex items-center gap-1.5">
@@ -285,12 +291,27 @@ function MemosPageContent() {
               className="rounded border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2 py-1 text-sm text-zinc-900 dark:text-zinc-100"
             />
           </label>
+          <label className="flex items-center gap-1.5">
+            <span className="text-xs uppercase tracking-wide">By</span>
+            <select
+              value={urlAuthor}
+              onChange={(e) => pushUrl({ author: e.target.value })}
+              className="rounded border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2 py-1 text-sm text-zinc-900 dark:text-zinc-100"
+            >
+              <option value="">All salespeople</option>
+              {salespeople.map((p) => (
+                <option key={p.uid} value={p.uid}>
+                  {p.displayName}
+                </option>
+              ))}
+            </select>
+          </label>
           {hasAnyFilter && (
             <button
               type="button"
               onClick={() => {
                 setInputValue("");
-                pushUrl({ q: "", start: "", end: "" });
+                pushUrl({ q: "", start: "", end: "", author: "" });
               }}
               className="text-xs text-zinc-500 dark:text-zinc-400 underline hover:text-zinc-700 dark:hover:text-zinc-200"
             >
@@ -344,7 +365,11 @@ function MemosPageContent() {
                     <div className="flex items-center justify-between gap-3">
                       <button
                         type="button"
-                        onClick={() => router.push(`/memos/${m.seq ?? m.id}`)}
+                        onClick={() =>
+                          router.push(
+                            `/memos/${m.seq ?? m.id}${urlQuery ? `?q=${encodeURIComponent(urlQuery)}` : ""}`,
+                          )
+                        }
                         className="flex-1 min-w-0 text-left text-sm"
                       >
                         <div className="font-medium text-zinc-900 dark:text-zinc-100 truncate">

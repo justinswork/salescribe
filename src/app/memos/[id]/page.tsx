@@ -2,13 +2,14 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import AuthGuard from "@/components/AuthGuard";
 import AccountMenu from "@/components/AccountMenu";
 import ThemeToggle from "@/components/ThemeToggle";
 import MemoDetailView from "@/components/MemoDetailView";
 import { useAuth } from "@/lib/AuthContext";
 import { getMemo, getMemoBySeq } from "@/lib/storage";
+import { parseQuery, highlightTerms } from "@/lib/search";
 import type { Memo } from "@/lib/schema";
 
 export default function MemoPage() {
@@ -22,9 +23,12 @@ export default function MemoPage() {
 function MemoPageContent() {
   const { user, org } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
   // The path segment is normally the memo's sequence number (memo #N); it may
   // also be a raw doc id for memos created before numbering.
   const key = String(useParams().id ?? "");
+  // Terms carried over from the memo list's search, so matches stay highlighted.
+  const highlight = highlightTerms(parseQuery(searchParams.get("q") ?? ""));
 
   const [memo, setMemo] = useState<Memo | null>(null);
   const [loading, setLoading] = useState(true);
@@ -85,7 +89,7 @@ function MemoPageContent() {
             {error}
           </div>
         ) : memo ? (
-          <MemoDetailView memo={memo} onUpdated={setMemo} />
+          <MemoDetailView memo={memo} onUpdated={setMemo} highlight={highlight} />
         ) : null}
       </main>
     </div>

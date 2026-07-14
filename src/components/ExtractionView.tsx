@@ -1,6 +1,12 @@
 "use client";
 
+import { createContext, useContext } from "react";
+import Highlight from "@/components/Highlight";
 import type { Extraction } from "@/lib/schema";
+
+// Search terms to highlight, shared with the module-level Field without
+// threading a prop through every call site.
+const HighlightContext = createContext<string[]>([]);
 
 function formatIso(iso: string | null): string | null {
   if (!iso) return null;
@@ -36,20 +42,32 @@ function Empty({ label }: { label: string }) {
 }
 
 function Field({ label, value }: { label: string; value: string | null }) {
+  const highlight = useContext(HighlightContext);
   if (!value) return null;
   return (
     <div className="flex gap-2 text-sm">
       <span className="font-medium text-zinc-500 dark:text-zinc-400 w-32 shrink-0">{label}</span>
-      <span className="text-zinc-900 dark:text-zinc-100">{value}</span>
+      <span className="text-zinc-900 dark:text-zinc-100">
+        <Highlight text={value} terms={highlight} />
+      </span>
     </div>
   );
 }
 
-export default function ExtractionView({ extraction }: { extraction: Extraction }) {
+export default function ExtractionView({
+  extraction,
+  highlight = [],
+}: {
+  extraction: Extraction;
+  highlight?: string[];
+}) {
   return (
+    <HighlightContext.Provider value={highlight}>
     <div className="flex flex-col gap-3">
       <Section title="Summary">
-        <p className="text-sm text-zinc-900 dark:text-zinc-100">{extraction.summary}</p>
+        <p className="text-sm text-zinc-900 dark:text-zinc-100">
+          <Highlight text={extraction.summary} terms={highlight} />
+        </p>
       </Section>
 
       <Section title="Calendar events" count={extraction.calendar_events.length}>
@@ -59,7 +77,9 @@ export default function ExtractionView({ extraction }: { extraction: Extraction 
           <ul className="flex flex-col gap-3">
             {extraction.calendar_events.map((e, i) => (
               <li key={i} className="rounded border border-zinc-200 dark:border-zinc-800 p-3">
-                <div className="font-medium text-zinc-900 dark:text-zinc-100">{e.title}</div>
+                <div className="font-medium text-zinc-900 dark:text-zinc-100">
+                  <Highlight text={e.title} terms={highlight} />
+                </div>
                 <Field label="When" value={formatIso(e.start_iso) ?? null} />
                 {e.end_iso && <Field label="Until" value={formatIso(e.end_iso)} />}
                 <Field label="Where" value={e.location} />
@@ -80,7 +100,9 @@ export default function ExtractionView({ extraction }: { extraction: Extraction 
           <ul className="flex flex-col gap-2">
             {extraction.reminders.map((r, i) => (
               <li key={i} className="flex justify-between text-sm rounded border border-zinc-200 dark:border-zinc-800 p-3">
-                <span className="text-zinc-900 dark:text-zinc-100">{r.text}</span>
+                <span className="text-zinc-900 dark:text-zinc-100">
+                  <Highlight text={r.text} terms={highlight} />
+                </span>
                 {r.due_iso && (
                   <span className="text-zinc-500 dark:text-zinc-400 ml-3 shrink-0">{formatIso(r.due_iso)}</span>
                 )}
@@ -97,7 +119,9 @@ export default function ExtractionView({ extraction }: { extraction: Extraction 
           <ul className="flex flex-col gap-2">
             {extraction.contacts.map((c, i) => (
               <li key={i} className="rounded border border-zinc-200 dark:border-zinc-800 p-3 text-sm">
-                <div className="font-medium text-zinc-900 dark:text-zinc-100">{c.name}</div>
+                <div className="font-medium text-zinc-900 dark:text-zinc-100">
+                  <Highlight text={c.name} terms={highlight} />
+                </div>
                 <Field label="Role" value={c.role} />
                 <Field label="Company" value={c.company} />
                 <Field label="Notes" value={c.notes} />
@@ -125,5 +149,6 @@ export default function ExtractionView({ extraction }: { extraction: Extraction 
         )}
       </Section>
     </div>
+    </HighlightContext.Provider>
   );
 }
