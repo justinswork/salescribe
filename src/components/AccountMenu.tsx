@@ -149,6 +149,20 @@ export default function AccountMenu() {
             >
               Team
             </Link>
+            <Link
+              href="/customers"
+              onClick={() => setOpen(false)}
+              className="block w-full text-left px-3 py-2 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+            >
+              Customers
+            </Link>
+            <Link
+              href="/map"
+              onClick={() => setOpen(false)}
+              className="block w-full text-left px-3 py-2 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+            >
+              Map
+            </Link>
             <div className="border-t border-zinc-200 dark:border-zinc-800" />
             <button
               type="button"
