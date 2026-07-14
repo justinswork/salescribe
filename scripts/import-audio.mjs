@@ -37,7 +37,7 @@ import { readFileSync, existsSync, readdirSync, createReadStream, statSync, unli
 import { spawnSync } from "node:child_process";
 import { join, dirname, basename, extname } from "node:path";
 import { tmpdir } from "node:os";
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import OpenAI from "openai";
 import { initializeApp, applicationDefault } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
@@ -106,6 +106,13 @@ function walkAudio(root) {
   };
   walk("");
   return out;
+}
+
+// Deterministic memo id from author + source file, so re-running a folder
+// (e.g. after a transient failure partway through) skips what's already in and
+// doesn't create duplicates.
+function memoId(uid, file) {
+  return createHash("sha1").update(`${uid}|${file}`).digest("hex").slice(0, 20);
 }
 
 // Pull the visit date/time out of a filename like
@@ -260,18 +267,24 @@ console.log(`Importing ${rows.length} note(s) into org "${ORG}"${DRY_RUN ? " (dr
 const grounding = await buildGrounding();
 
 let ok = 0;
+let skipped = 0;
 const failures = [];
 for (const row of rows) {
   const audioPath = join(DIR, row.file);
   try {
     if (!existsSync(audioPath)) throw new Error(`file not found: ${audioPath}`);
     const user = await auth.getUserByEmail(row.email);
+    const id = memoId(user.uid, row.file);
+    if (!DRY_RUN && (await db.doc(`orgs/${ORG}/memos/${id}`).get()).exists) {
+      console.log(`  = ${row.file} (already imported)`);
+      skipped++;
+      continue;
+    }
     const dateIso = row.date ? new Date(row.date).toISOString() : new Date().toISOString();
     const transcript = await transcriptFor(audioPath, grounding.whisperPrompt);
     if (!transcript) throw new Error("empty transcript");
     const extraction = await extract(transcript, dateIso, grounding.extractContext);
 
-    const id = randomUUID();
     const ext = extname(audioPath).slice(1) || "webm";
     if (DRY_RUN) {
       console.log(`  ~ ${row.file} -> #? ${user.email} (${extraction.deal?.company ?? "no company"})`);
@@ -294,6 +307,7 @@ for (const row of rows) {
       authorName: name,
       visibility: row.visibility === "private" ? "private" : "shared",
       audioPath: dest,
+      sourceFile: row.file,
       revisions: [{ at: new Date().toISOString(), byUid: user.uid, byName: name, action: "created" }],
     });
     console.log(`  ✓ ${row.file} -> #${seq} ${user.email}`);
@@ -304,7 +318,7 @@ for (const row of rows) {
   }
 }
 
-console.log(`\nDone: ${ok}/${rows.length} imported.`);
+console.log(`\nDone: ${ok}/${rows.length} imported${skipped ? `, ${skipped} already present` : ""}.`);
 if (failures.length) {
   console.log(`${failures.length} failure(s):`);
   for (const f of failures) console.log(`  - ${f.file}: ${f.message}`);
