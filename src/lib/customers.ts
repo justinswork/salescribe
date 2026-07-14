@@ -138,6 +138,16 @@ export async function deleteCustomer(id: string): Promise<void> {
   await deleteDoc(doc(customersCollection(), id));
 }
 
+// Explicitly set the canonical display name (a user edit). upsertCustomer keeps
+// the first name it saw so a memo-sync variant can't rename an account; this
+// overwrites it on purpose, and later syncs preserve it. The doc id (the
+// normalized-name slug memos join on) is unchanged, so links keep resolving.
+export async function renameCustomer(id: string, name: string): Promise<Customer> {
+  const ref = doc(customersCollection(), id);
+  await setDoc(ref, { name: name.trim(), updated_iso: new Date().toISOString() }, { merge: true });
+  return (await getDoc(ref)).data() as Customer;
+}
+
 // Upload a customer's logo to orgs/{orgId}/customers/{id}/logo.<ext> and return
 // a tokenized download URL (stored on the customer as logoUrl).
 export async function uploadCustomerLogo(id: string, blob: Blob, ext: string): Promise<string> {

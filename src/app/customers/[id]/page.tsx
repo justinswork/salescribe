@@ -18,6 +18,7 @@ import {
   getCustomer,
   upsertCustomer,
   uploadCustomerLogo,
+  renameCustomer,
   memosForCustomer,
   contactsForCustomer,
   type CustomerContact,
@@ -149,6 +150,26 @@ function CustomerHeaderCard({
 }) {
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState(customer.name);
+  const [savingName, setSavingName] = useState(false);
+
+  function saveName() {
+    const n = nameDraft.trim();
+    if (!n) return;
+    void (async () => {
+      setSavingName(true);
+      onError("");
+      try {
+        onSaved(await renameCustomer(customer.id, n));
+        setEditingName(false);
+      } catch (e) {
+        onError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setSavingName(false);
+      }
+    })();
+  }
 
   function onPickLogo(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -193,10 +214,54 @@ function CustomerHeaderCard({
           )}
         </button>
         <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={onPickLogo} />
-        <div className="min-w-0">
-          <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 truncate">
-            {customer.name}
-          </h1>
+        <div className="min-w-0 flex-1">
+          {editingName ? (
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                autoFocus
+                value={nameDraft}
+                onChange={(e) => setNameDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") saveName();
+                  if (e.key === "Escape") setEditingName(false);
+                }}
+                className="min-w-0 flex-1 rounded border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-1.5 text-lg font-semibold text-zinc-900 dark:text-zinc-100"
+              />
+              <button
+                type="button"
+                onClick={saveName}
+                disabled={savingName || !nameDraft.trim()}
+                className="text-xs font-medium text-blue-600 hover:underline disabled:opacity-50"
+              >
+                {savingName ? "Saving…" : "OK"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditingName(false)}
+                disabled={savingName}
+                className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 truncate">
+                {customer.name}
+              </h1>
+              <button
+                type="button"
+                onClick={() => {
+                  setNameDraft(customer.name);
+                  setEditingName(true);
+                }}
+                className="shrink-0 text-xs text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"
+              >
+                Edit
+              </button>
+            </div>
+          )}
           <div className="text-sm text-zinc-500 dark:text-zinc-400">
             {visitCount} {visitCount === 1 ? "visit" : "visits"}
             {customer.lat != null && customer.lng != null ? " · located" : ""}
