@@ -55,3 +55,8 @@ firestore-debug.log
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Regenerated dry-run output of scripts/find-customer-logos.mjs (the curated
+# logo-overrides.json IS committed; these are reproducible review artifacts).
+/scripts/logo-review.html
+/scripts/logo-review.json
