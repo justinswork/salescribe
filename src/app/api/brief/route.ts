@@ -34,6 +34,23 @@ function compactMemo(m: Memo) {
   };
 }
 
+// Coerce the model's tool output into a well-formed Brief. tool_use "required"
+// fields aren't hard-guaranteed, and a long briefing can hit max_tokens and cut
+// off later fields — either way we backfill missing arrays/strings so the client
+// always gets a complete object rather than crashing on `undefined.length`.
+function normalizeBrief(raw: unknown): Brief {
+  const b = (raw && typeof raw === "object" ? raw : {}) as Partial<Brief>;
+  const arr = <T,>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
+  return {
+    deal_status_summary: typeof b.deal_status_summary === "string" ? b.deal_status_summary : "",
+    deal_arc: arr(b.deal_arc),
+    open_questions: arr(b.open_questions),
+    talking_points: arr(b.talking_points),
+    outstanding_next_steps: arr(b.outstanding_next_steps),
+    risks: arr(b.risks),
+  };
+}
+
 export async function POST(req: NextRequest) {
   const principal = await authorize(req);
   if (principal instanceof Response) return principal;
@@ -87,7 +104,7 @@ Trace the arc chronologically (oldest first), identify what matters, and call su
 
     const response = await anthropic.messages.create({
       model: MODELS.extractor,
-      max_tokens: 2048,
+      max_tokens: 4096,
       system: BRIEFER_SYSTEM,
       tools: [briefToolSchema],
       tool_choice: { type: "tool", name: briefToolSchema.name },
@@ -112,7 +129,7 @@ Trace the arc chronologically (oldest first), identify what matters, and call su
       );
     }
 
-    return Response.json({ brief: toolBlock.input as Brief });
+    return Response.json({ brief: normalizeBrief(toolBlock.input) });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     const status =

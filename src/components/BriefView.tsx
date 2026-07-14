@@ -78,6 +78,13 @@ export default function BriefView({
   memoCount: number;
   brief: Brief;
 }) {
+  // Defensive defaults: the API normalizes these, but guard against any partial
+  // brief so a missing array never crashes the render.
+  const dealArc = brief.deal_arc ?? [];
+  const nextSteps = brief.outstanding_next_steps ?? [];
+  const talkingPoints = brief.talking_points ?? [];
+  const openQuestions = brief.open_questions ?? [];
+  const risks = brief.risks ?? [];
   return (
     <div className="flex flex-col gap-3">
       <div className="text-xs text-zinc-500 dark:text-zinc-400 uppercase tracking-wide">
@@ -93,12 +100,12 @@ export default function BriefView({
         </p>
       </Section>
 
-      <Section title="Deal arc" count={brief.deal_arc.length}>
-        {brief.deal_arc.length === 0 ? (
+      <Section title="Deal arc" count={dealArc.length}>
+        {dealArc.length === 0 ? (
           <Empty label="No notable moments to reconstruct." />
         ) : (
           <ol className="flex flex-col gap-2">
-            {brief.deal_arc.map((e, i) => (
+            {dealArc.map((e, i) => (
               <li key={i} className="text-sm flex gap-3">
                 <span className="text-xs text-zinc-500 dark:text-zinc-400 tabular-nums shrink-0 w-24 pt-0.5">
                   {formatDate(e.date_iso)}
@@ -110,12 +117,12 @@ export default function BriefView({
         )}
       </Section>
 
-      <Section title="Outstanding next steps" count={brief.outstanding_next_steps.length}>
-        {brief.outstanding_next_steps.length === 0 ? (
+      <Section title="Outstanding next steps" count={nextSteps.length}>
+        {nextSteps.length === 0 ? (
           <Empty label="Nothing outstanding." />
         ) : (
           <ul className="flex flex-col gap-2">
-            {brief.outstanding_next_steps.map((s, i) => (
+            {nextSteps.map((s, i) => (
               <li key={i} className="text-sm flex items-start gap-2">
                 <OwnerPill owner={s.owner} />
                 <div className="flex-1">
@@ -132,12 +139,12 @@ export default function BriefView({
         )}
       </Section>
 
-      <Section title="Talking points" count={brief.talking_points.length}>
-        {brief.talking_points.length === 0 ? (
+      <Section title="Talking points" count={talkingPoints.length}>
+        {talkingPoints.length === 0 ? (
           <Empty label="Nothing flagged." />
         ) : (
           <ul className="flex flex-col gap-1.5">
-            {brief.talking_points.map((t, i) => (
+            {talkingPoints.map((t, i) => (
               <li key={i} className="text-sm text-zinc-900 dark:text-zinc-100 flex gap-2">
                 <span className="text-zinc-400">·</span>
                 <span>{t}</span>
@@ -147,12 +154,12 @@ export default function BriefView({
         )}
       </Section>
 
-      <Section title="Open questions" count={brief.open_questions.length}>
-        {brief.open_questions.length === 0 ? (
+      <Section title="Open questions" count={openQuestions.length}>
+        {openQuestions.length === 0 ? (
           <Empty label="No open questions." />
         ) : (
           <ul className="flex flex-col gap-1.5">
-            {brief.open_questions.map((q, i) => (
+            {openQuestions.map((q, i) => (
               <li key={i} className="text-sm text-zinc-900 dark:text-zinc-100 flex gap-2">
                 <span className="text-zinc-400">·</span>
                 <span>{q}</span>
@@ -162,12 +169,12 @@ export default function BriefView({
         )}
       </Section>
 
-      <Section title="Risks" count={brief.risks.length}>
-        {brief.risks.length === 0 ? (
+      <Section title="Risks" count={risks.length}>
+        {risks.length === 0 ? (
           <Empty label="No risks flagged." />
         ) : (
           <ul className="flex flex-col gap-2">
-            {brief.risks.map((r, i) => (
+            {risks.map((r, i) => (
               <li key={i} className="text-sm flex items-start gap-2">
                 <RiskPill level={r.level} />
                 <span className="text-zinc-900 dark:text-zinc-100">{r.description}</span>
