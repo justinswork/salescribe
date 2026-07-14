@@ -15,6 +15,10 @@
 //
 // Usage:
 //   node scripts/create-users.mjs --users ./scripts/users.csv --org vibrationresearch.com [--role member] [--dry-run]
+//
+// Delete accounts (Auth user + profile + membership) for every email in the
+// CSV — to undo a mistaken run:
+//   node scripts/create-users.mjs --users ./scripts/users.csv --org vibrationresearch.com --delete [--dry-run]
 
 import { readFileSync } from "node:fs";
 import { initializeApp, applicationDefault } from "firebase-admin/app";
@@ -32,6 +36,7 @@ const USERS = arg("users");
 const ORG = arg("org");
 const ROLE = arg("role", "member") === "admin" ? "admin" : "member";
 const DRY_RUN = Boolean(arg("dry-run", false));
+const DELETE = Boolean(arg("delete", false));
 
 if (!USERS || !ORG) {
   console.error("Need --users <csv> and --org <orgId>. See the header of this file for usage.");
@@ -70,6 +75,26 @@ for (const row of rows) {
     } catch {
       user = null;
     }
+
+    if (DELETE) {
+      if (!user) {
+        console.log(`  - ${email} (not found)`);
+        ok++;
+        continue;
+      }
+      if (DRY_RUN) {
+        console.log(`  ~ ${email} [would delete]`);
+        ok++;
+        continue;
+      }
+      await db.doc(`orgs/${ORG}/members/${user.uid}`).delete();
+      await db.doc(`users/${user.uid}`).delete();
+      await auth.deleteUser(user.uid);
+      console.log(`  ✓ deleted ${email}`);
+      ok++;
+      continue;
+    }
+
     if (DRY_RUN) {
       console.log(`  ~ ${email} (${displayName}) ${user ? "[exists]" : "[would create]"}`);
       ok++;
