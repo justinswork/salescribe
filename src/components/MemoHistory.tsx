@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Avatar from "./Avatar";
 import VisibilityPill from "./VisibilityPill";
-import type { Memo } from "@/lib/schema";
+import type { Memo, OrgMember } from "@/lib/schema";
 
 type Props = {
   memos: Memo[];
@@ -15,6 +15,9 @@ type Props = {
   currentUid?: string;
   currentPhotoURL?: string | null;
   currentColor?: string | null;
+  // Org roster keyed by uid, so other authors' avatars (photo/color/name)
+  // render too, not just the current user's.
+  roster?: Record<string, OrgMember>;
 };
 
 const VISIBLE_LIMIT = 8;
@@ -38,6 +41,7 @@ export default function MemoHistory({
   currentUid,
   currentPhotoURL,
   currentColor,
+  roster,
 }: Props) {
   if (memos.length === 0) return null;
 
@@ -64,7 +68,8 @@ export default function MemoHistory({
       <ul className="flex flex-col gap-2">
         {memos.slice(0, VISIBLE_LIMIT).map((m) => {
           const mine = Boolean(m.authorUid && currentUid && m.authorUid === currentUid);
-          const authorName = m.authorName || "Teammate";
+          const member = m.authorUid ? roster?.[m.authorUid] : undefined;
+          const authorName = m.authorName || member?.displayName || "Teammate";
           return (
             <li
               key={m.id}
@@ -120,8 +125,8 @@ export default function MemoHistory({
                   name={authorName}
                   seed={m.authorUid || authorName}
                   label={mine ? "You" : authorName}
-                  photoURL={mine ? currentPhotoURL : undefined}
-                  color={mine ? currentColor : undefined}
+                  photoURL={(mine ? currentPhotoURL : member?.photoURL) || undefined}
+                  color={(mine ? currentColor : member?.avatarColor) || undefined}
                 />
               </div>
             </li>

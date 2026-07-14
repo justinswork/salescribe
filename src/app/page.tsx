@@ -78,7 +78,7 @@ function VisibilityToggle({
 }
 
 function SalescribeApp() {
-  const { user, profile, orgGrounding } = useAuth();
+  const { user, profile, orgGrounding, roster } = useAuth();
   const handsFree = useHandsFree();
   const router = useRouter();
 
@@ -810,6 +810,7 @@ function SalescribeApp() {
                         currentUid={user?.uid}
                         currentPhotoURL={user?.photoURL}
                         currentColor={profile?.avatarColor}
+                        roster={roster}
                       />
                     </div>
                   )}
