@@ -46,6 +46,9 @@ export default function MemoDetailView({
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [reextracting, setReextracting] = useState(false);
   const [actionError, setActionError] = useState("");
+  const [companyEditing, setCompanyEditing] = useState(false);
+  const [companyDraft, setCompanyDraft] = useState("");
+  const [savingCompany, setSavingCompany] = useState(false);
 
   // Resolve a playable URL for the original recording, if this memo has one.
   useEffect(() => {
@@ -103,6 +106,44 @@ export default function MemoDetailView({
         setActionError(e instanceof Error ? e.message : String(e));
       } finally {
         setReextracting(false);
+      }
+    })();
+  }
+
+  // Quick inline overwrite of just the company (the memo's identity — it drives
+  // the list label and meeting-prep grouping). Writes through updateMemo so the
+  // change lands in revision history like any other edit.
+  function saveCompany() {
+    if (!onUpdated) return;
+    void (async () => {
+      setSavingCompany(true);
+      setActionError("");
+      try {
+        const base = memo.extraction.deal ?? {
+          company: null,
+          prospect_name: null,
+          stated_problem: null,
+          budget_signals: null,
+          decision_makers: null,
+          objections: null,
+          competitors: null,
+          next_step: null,
+          next_step_due_iso: null,
+        };
+        const updated: Memo = {
+          ...memo,
+          extraction: {
+            ...memo.extraction,
+            deal: { ...base, company: companyDraft.trim() || null },
+          },
+        };
+        const saved = await updateMemo(memo, updated);
+        onUpdated(saved);
+        setCompanyEditing(false);
+      } catch (e) {
+        setActionError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setSavingCompany(false);
       }
     })();
   }
@@ -173,6 +214,72 @@ export default function MemoDetailView({
       {actionError && (
         <div className="text-sm text-red-600 dark:text-red-400 break-words">{actionError}</div>
       )}
+
+      {/* Company — the memo's identity; quick inline overwrite */}
+      <section className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">
+              Company
+            </div>
+            {companyEditing ? (
+              <input
+                type="text"
+                autoFocus
+                value={companyDraft}
+                onChange={(e) => setCompanyDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") saveCompany();
+                  if (e.key === "Escape") setCompanyEditing(false);
+                }}
+                placeholder="Company name"
+                className="w-full rounded border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400"
+              />
+            ) : (
+              <div className="text-base font-medium text-zinc-900 dark:text-zinc-100 truncate">
+                {memo.extraction.deal?.company || (
+                  <span className="italic font-normal text-zinc-400 dark:text-zinc-500">No company set</span>
+                )}
+              </div>
+            )}
+          </div>
+          {canEdit && onUpdated && (
+            <div className="flex items-center gap-3 shrink-0">
+              {companyEditing ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={saveCompany}
+                    disabled={savingCompany}
+                    className="text-xs font-medium text-blue-600 hover:underline disabled:opacity-50"
+                  >
+                    {savingCompany ? "Saving…" : "OK"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCompanyEditing(false)}
+                    disabled={savingCompany}
+                    className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
+                  >
+                    Cancel
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCompanyDraft(memo.extraction.deal?.company ?? "");
+                    setCompanyEditing(true);
+                  }}
+                  className="text-xs text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
+                >
+                  Edit
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      </section>
 
       {/* Tabs */}
       <div className="flex items-center gap-1 border-b border-zinc-200 dark:border-zinc-800">
