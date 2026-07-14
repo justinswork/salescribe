@@ -337,12 +337,23 @@ export default function MemoDetailView({
         <div className="text-sm text-red-600 dark:text-red-400 break-words">{actionError}</div>
       )}
 
-      {/* Company — the memo's identity; quick inline overwrite */}
+      {/* Customer — the memo's account: editable company name + logo/address,
+          and a link to the full customer profile. */}
       <section className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-4">
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          {company && (
+            customer?.logoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={customer.logoUrl} alt="" className="h-10 w-10 rounded object-contain bg-white shrink-0" />
+            ) : (
+              <div className="h-10 w-10 rounded bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-sm font-semibold text-zinc-400 dark:text-zinc-500 shrink-0">
+                {(customer?.name || company).slice(0, 1).toUpperCase()}
+              </div>
+            )
+          )}
           <div className="min-w-0 flex-1">
             <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">
-              Company
+              Customer
             </div>
             {companyEditing ? (
               <input
@@ -358,16 +369,21 @@ export default function MemoDetailView({
                 className="w-full rounded border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400"
               />
             ) : (
-              <div className="text-base font-medium text-zinc-900 dark:text-zinc-100 truncate">
-                {memo.extraction.deal?.company || (
-                  <span className="italic font-normal text-zinc-400 dark:text-zinc-500">No company set</span>
+              <>
+                <div className="text-base font-medium text-zinc-900 dark:text-zinc-100 truncate">
+                  {memo.extraction.deal?.company || (
+                    <span className="italic font-normal text-zinc-400 dark:text-zinc-500">No company set</span>
+                  )}
+                </div>
+                {customer?.address && (
+                  <div className="text-xs text-zinc-500 dark:text-zinc-400 truncate">{customer.address}</div>
                 )}
-              </div>
+              </>
             )}
           </div>
-          {canEdit && onUpdated && (
-            <div className="flex items-center gap-3 shrink-0">
-              {companyEditing ? (
+          <div className="flex items-center gap-3 shrink-0">
+            {canEdit && onUpdated && (
+              companyEditing ? (
                 <>
                   <button
                     type="button"
@@ -397,48 +413,19 @@ export default function MemoDetailView({
                 >
                   Edit
                 </button>
-              )}
-            </div>
-          )}
+              )
+            )}
+            {company && !companyEditing && (
+              <Link
+                href={`/customers/${customerId(company)}`}
+                className="rounded border border-zinc-300 dark:border-zinc-700 px-3 py-1.5 text-sm text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-900"
+              >
+                View customer →
+              </Link>
+            )}
+          </div>
         </div>
       </section>
-
-      {/* Customer — link to the account profile, with a live snippet */}
-      {company && (
-        <section className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-4">
-          <div className="flex items-center gap-3">
-            {customer?.logoUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={customer.logoUrl}
-                alt=""
-                className="h-10 w-10 rounded object-contain bg-white shrink-0"
-              />
-            ) : (
-              <div className="h-10 w-10 rounded bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-sm font-semibold text-zinc-400 dark:text-zinc-500 shrink-0">
-                {(customer?.name || company).slice(0, 1).toUpperCase()}
-              </div>
-            )}
-            <div className="min-w-0 flex-1">
-              <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-                Customer
-              </div>
-              <div className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">
-                {customer?.name || company}
-              </div>
-              {customer?.address && (
-                <div className="text-xs text-zinc-500 dark:text-zinc-400 truncate">{customer.address}</div>
-              )}
-            </div>
-            <Link
-              href={`/customers/${customerId(company)}`}
-              className="shrink-0 rounded border border-zinc-300 dark:border-zinc-700 px-3 py-1.5 text-sm text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-900"
-            >
-              View customer →
-            </Link>
-          </div>
-        </section>
-      )}
 
       {/* Merge picker */}
       {mergeOpen && (
