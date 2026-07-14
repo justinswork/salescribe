@@ -125,6 +125,16 @@ function dateFromName(file) {
   return new Date(Number(y), Number(mo) - 1, Number(d), hh ? Number(hh) : 12, mm ? Number(mm) : 0).toISOString();
 }
 
+// Pull the account/company out of a filename like
+// "2026-05-14 1106 - Collin - Milwaukee Tool - Battery Group.mp4". The name is
+// "date[ time] - person - company[ - subteam]", so everything after the person
+// segment is the account. Used as a strong hint so deal.company is reliable
+// even when the audio doesn't clearly name the account. "" if not present.
+function companyFromName(file) {
+  const parts = basename(file, extname(file)).split(" - ");
+  return parts.length >= 3 ? parts.slice(2).join(" - ").trim() : "";
+}
+
 // --- manifest ----------------------------------------------------------------
 function parseManifest(path) {
   const lines = readFileSync(path, "utf8").split(/\r?\n/).filter((l) => l.trim());
@@ -283,7 +293,12 @@ for (const row of rows) {
     const dateIso = row.date ? new Date(row.date).toISOString() : new Date().toISOString();
     const transcript = await transcriptFor(audioPath, grounding.whisperPrompt);
     if (!transcript) throw new Error("empty transcript");
-    const extraction = await extract(transcript, dateIso, grounding.extractContext);
+    // Feed the account named in the filename as a strong company hint.
+    const company = companyFromName(row.file);
+    const orgContext = company
+      ? `${grounding.extractContext ?? ""} This recording is a sales visit with the account "${company}" — use that as deal.company unless the transcript clearly names a different company.`.trim()
+      : grounding.extractContext;
+    const extraction = await extract(transcript, dateIso, orgContext);
 
     const ext = extname(audioPath).slice(1) || "webm";
     if (DRY_RUN) {
