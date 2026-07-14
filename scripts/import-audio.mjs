@@ -127,7 +127,11 @@ async function extract(transcript, dateIso, orgContext) {
 }
 
 // --- firebase-admin ----------------------------------------------------------
-initializeApp({ credential: applicationDefault(), storageBucket: BUCKET });
+initializeApp({
+  credential: applicationDefault(),
+  storageBucket: BUCKET,
+  projectId: fromEnv("NEXT_PUBLIC_FIREBASE_PROJECT_ID"),
+});
 const db = getFirestore();
 const auth = getAuth();
 const bucket = getStorage().bucket();
