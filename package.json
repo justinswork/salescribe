@@ -11,6 +11,7 @@
     "gen:demo": "node scripts/generate-test-data.mjs",
     "create:users": "node scripts/create-users.mjs",
     "import:audio": "node scripts/import-audio.mjs",
+    "import:photos": "node scripts/import-photos.mjs",
     "test:rules": "firebase emulators:exec --only firestore \"node firestore-tests/rules.test.mjs\""
   },
   "dependencies": {
