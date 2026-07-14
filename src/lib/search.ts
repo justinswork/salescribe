@@ -11,19 +11,22 @@ import type { Memo } from "./schema";
 export type SearchField = "any" | "company" | "contact" | "summary" | "transcript" | "author";
 export const SEARCH_FIELDS = ["company", "contact", "summary", "transcript", "author"] as const;
 
-export type SearchCondition = { field: SearchField; value: string };
+// "contains" = substring match (`field:value`); "exact" = whole-field equals
+// (`field=value`), e.g. company=Element excludes "Element Materials".
+export type SearchOp = "contains" | "exact";
+export type SearchCondition = { field: SearchField; op: SearchOp; value: string };
 
-// Normalize the friendlier operators (`=`, `contains`, `is`) down to `field:`
-// so the tokenizer only has to handle one form.
+// Normalize the word operators to their symbols so the tokenizer only handles
+// `field:value` (contains) and `field=value` (exact).
 function normalize(q: string): string {
   const fields = SEARCH_FIELDS.join("|");
   return q
-    .replace(new RegExp(`\\b(${fields})\\s*=\\s*`, "gi"), "$1:")
-    .replace(new RegExp(`\\b(${fields})\\s+(?:contains|is)\\s+`, "gi"), "$1:");
+    .replace(new RegExp(`\\b(${fields})\\s+contains\\s+`, "gi"), "$1:")
+    .replace(new RegExp(`\\b(${fields})\\s+is\\s+`, "gi"), "$1=");
 }
 
 const TOKEN_RE =
-  /(?:(company|contact|summary|transcript|author)\s*:\s*)?(?:"([^"]+)"|(\S+))/gi;
+  /(?:(company|contact|summary|transcript|author)\s*([:=])\s*)?(?:"([^"]+)"|(\S+))/gi;
 
 // Parse a query into AND-ed conditions. Standalone "and" glue is ignored.
 export function parseQuery(q: string): SearchCondition[] {
@@ -34,10 +37,11 @@ export function parseQuery(q: string): SearchCondition[] {
   let m: RegExpExecArray | null;
   while ((m = TOKEN_RE.exec(normalized)) !== null) {
     const field = (m[1]?.toLowerCase() as SearchField | undefined) ?? "any";
-    const value = (m[2] ?? m[3] ?? "").trim();
+    const op: SearchOp = m[2] === "=" ? "exact" : "contains";
+    const value = (m[3] ?? m[4] ?? "").trim();
     if (!value) continue;
     if (field === "any" && /^and$/i.test(value)) continue;
-    conditions.push({ field, value });
+    conditions.push({ field, op, value });
   }
   return conditions;
 }
@@ -87,7 +91,9 @@ export function matchMemo(m: Memo, conditions: SearchCondition[], authorName: st
   const any = anyText(m, authorName).toLowerCase();
   return conditions.every((c) => {
     const v = c.value.toLowerCase();
-    return (c.field === "any" ? any : fieldText(m, c.field, authorName).toLowerCase()).includes(v);
+    if (c.field === "any") return any.includes(v); // "any" is always contains
+    const text = fieldText(m, c.field, authorName).toLowerCase();
+    return c.op === "exact" ? text.trim() === v : text.includes(v);
   });
 }
 
