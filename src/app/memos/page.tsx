@@ -11,8 +11,23 @@ import Avatar from "@/components/Avatar";
 import VisibilityPill from "@/components/VisibilityPill";
 import { useAuth } from "@/lib/AuthContext";
 import { loadMemos } from "@/lib/storage";
-import { parseQuery, matchMemo } from "@/lib/search";
+import { parseQuery, matchMemo, type SearchField } from "@/lib/search";
 import type { Memo } from "@/lib/schema";
+
+type FilterRow = { field: SearchField; value: string };
+
+// Serialize builder rows into the `field:value` query string that drives
+// filtering and highlighting (quoting values with spaces).
+function serializeRows(rows: FilterRow[]): string {
+  return rows
+    .filter((r) => r.value.trim())
+    .map((r) => {
+      const v = r.value.trim();
+      const val = /\s/.test(v) ? `"${v}"` : v;
+      return r.field === "any" ? val : `${r.field}:${val}`;
+    })
+    .join(" ");
+}
 
 const PAGE_SIZE = 25;
 
@@ -33,8 +48,8 @@ function MemosPageContent() {
     m.authorName || (m.authorUid ? roster[m.authorUid]?.displayName ?? "" : "");
 
   // URL is the source of truth for query + page so back/forward navigation and
-  // sharing both work. The text input keeps a local mirror for snappy typing
-  // and debounces URL updates.
+  // sharing both work. The filter builder keeps local rows for snappy editing
+  // and debounces URL updates (serialized to the `field:value` query string).
   const urlQuery = searchParams.get("q") ?? "";
   const urlPage = Math.max(1, Number(searchParams.get("page") ?? "1"));
   const urlStart = searchParams.get("start") ?? ""; // YYYY-MM-DD
@@ -43,7 +58,21 @@ function MemosPageContent() {
 
   const [memos, setMemos] = useState<Memo[]>([]);
   const [loading, setLoading] = useState(true);
-  const [inputValue, setInputValue] = useState(urlQuery);
+  // Editable filter rows, seeded once from the URL (so a shared link or a
+  // back-navigation restores the builder).
+  const [rows, setRows] = useState<FilterRow[]>(() => {
+    const parsed = parseQuery(urlQuery).filter((c) => c.field !== "author");
+    return parsed.length ? parsed : [{ field: "any", value: "" }];
+  });
+
+  const setRow = (i: number, patch: Partial<FilterRow>) =>
+    setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  const addRow = () => setRows((rs) => [...rs, { field: "any", value: "" }]);
+  const removeRow = (i: number) =>
+    setRows((rs) => {
+      const next = rs.filter((_, j) => j !== i);
+      return next.length ? next : [{ field: "any", value: "" }];
+    });
 
   // Load memos when the signed-in user is known.
   useEffect(() => {
@@ -86,21 +115,17 @@ function MemosPageContent() {
     router.replace(qs ? `/memos?${qs}` : "/memos", { scroll: false });
   }
 
-  // Debounced sync: when the user types in the search box, push to URL after
-  // 300ms of no further typing. Resets to page 1.
+  // Debounced sync: serialize the builder rows to the URL query after 300ms of
+  // no further edits. Resets to page 1.
   useEffect(() => {
-    if (inputValue === urlQuery) return;
+    const q = serializeRows(rows);
+    if (q === urlQuery) return;
     const t = setTimeout(() => {
-      pushUrl({ q: inputValue });
+      pushUrl({ q });
     }, 300);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [inputValue, urlQuery]);
-
-  // If the URL's query changes externally (e.g., user hits back), sync the input.
-  useEffect(() => {
-    setInputValue(urlQuery);
-  }, [urlQuery]);
+  }, [rows, urlQuery]);
 
   const filtered = useMemo(() => {
     let result = memos;
@@ -257,17 +282,52 @@ function MemosPageContent() {
           </Link>
         </div>
 
-        <div className="flex flex-col gap-1">
-          <input
-            type="search"
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            placeholder='Search — try company:Element transcript:ObserVIEW'
-            className="w-full rounded border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400"
-          />
-          <span className="text-[11px] text-zinc-400 dark:text-zinc-500">
-            Target a field with <code>company:</code> <code>contact:</code> <code>summary:</code> <code>transcript:</code> (also <code>=</code> / <code>contains</code>). Quote phrases: <code>company:&quot;Element Materials&quot;</code>. Bare terms match anything.
-          </span>
+        <div className="flex flex-col gap-2">
+          {rows.map((row, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <select
+                value={row.field}
+                onChange={(e) => setRow(i, { field: e.target.value as SearchField })}
+                className="rounded border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2 py-1.5 text-sm text-zinc-900 dark:text-zinc-100 shrink-0"
+              >
+                <option value="any">Any field</option>
+                <option value="company">Company</option>
+                <option value="contact">Contact</option>
+                <option value="summary">Summary</option>
+                <option value="transcript">Transcript</option>
+              </select>
+              <span className="text-xs text-zinc-400 dark:text-zinc-500 shrink-0">contains</span>
+              <input
+                type="text"
+                value={row.value}
+                onChange={(e) => setRow(i, { value: e.target.value })}
+                placeholder={row.field === "any" ? "Search anything…" : `Search ${row.field}…`}
+                className="flex-1 min-w-0 rounded border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-1.5 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400"
+              />
+              <button
+                type="button"
+                onClick={() => removeRow(i)}
+                aria-label="Remove filter"
+                className="shrink-0 px-1 text-zinc-400 hover:text-red-600"
+              >
+                ×
+              </button>
+            </div>
+          ))}
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={addRow}
+              className="text-xs text-blue-600 hover:underline"
+            >
+              + Add filter
+            </button>
+            {rows.filter((r) => r.value.trim()).length > 1 && (
+              <span className="text-xs text-zinc-400 dark:text-zinc-500">
+                All conditions must match
+              </span>
+            )}
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400">
@@ -310,7 +370,7 @@ function MemosPageContent() {
             <button
               type="button"
               onClick={() => {
-                setInputValue("");
+                setRows([{ field: "any", value: "" }]);
                 pushUrl({ q: "", start: "", end: "", author: "" });
               }}
               className="text-xs text-zinc-500 dark:text-zinc-400 underline hover:text-zinc-700 dark:hover:text-zinc-200"
@@ -331,8 +391,8 @@ function MemosPageContent() {
             <div className="flex items-center justify-between gap-3">
               <div className="text-xs text-zinc-500 dark:text-zinc-400">
                 {filtered.length === 0
-                  ? `No matches for "${urlQuery}".`
-                  : `Showing ${startIdx + 1}–${startIdx + visible.length} of ${filtered.length}${urlQuery ? ` matching "${urlQuery}"` : ""}.`}
+                  ? "No memos match your filters."
+                  : `Showing ${startIdx + 1}–${startIdx + visible.length} of ${filtered.length}${hasAnyFilter ? " matching" : ""}.`}
               </div>
               <Pagination compact={true} />
             </div>

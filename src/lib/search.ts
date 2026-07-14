@@ -45,9 +45,9 @@ export function parseQuery(q: string): SearchCondition[] {
 function fieldText(m: Memo, field: SearchField, authorName: string): string {
   switch (field) {
     case "company":
-      return [m.extraction.deal?.company, ...m.extraction.contacts.map((c) => c.company)]
-        .filter(Boolean)
-        .join(" ");
+      // The memo's own company (deal). Contact employers are searched via the
+      // "contact" field, so company: stays specific to the memo's account.
+      return m.extraction.deal?.company ?? "";
     case "contact":
       return m.extraction.contacts
         .flatMap((c) => [c.name, c.role, c.company, c.notes])
