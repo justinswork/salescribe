@@ -1,8 +1,9 @@
 // One-time bulk import of existing audio notes into Salescribe.
 //
 // Pipeline per file:  audio -> transcript -> /api/extract -> Firestore memo + Storage audio
-//   - Transcription: a sidecar .txt next to the audio (recommended), or a
-//     local Whisper CLI if you pass --transcribe (free, offline, private).
+//   - Transcription: a sidecar .txt next to the audio, the OpenAI Whisper API
+//     (--transcribe-api, needs OPENAI_API_KEY + ffmpeg on PATH), or a local
+//     Whisper CLI (--transcribe, free/offline).
 //   - Extraction: POSTed to a RUNNING app's /api/extract, which uses the app's
 //     own Anthropic key (no token needed when auth isn't enforced, e.g. local
 //     `npm run dev`). This reuses the exact extractor prompt + schema.
@@ -14,7 +15,8 @@
 //   - GOOGLE_APPLICATION_CREDENTIALS pointing at a service-account key JSON for
 //     the target Firebase project (admin access).
 //   - Storage bucket via --bucket or NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET.
-//   - For --transcribe: OpenAI Whisper installed (`pip install openai-whisper`).
+//   - For --transcribe-api: OPENAI_API_KEY + ffmpeg on PATH (downmixes to
+//     stay under Whisper's 25MB limit). For --transcribe: OpenAI Whisper CLI.
 //   - Each author email must already exist as a Firebase Auth user.
 //
 // Manifest CSV (header row required), commas not allowed inside fields:
@@ -31,11 +33,12 @@
 //   The folder is scanned recursively (e.g. Collin/2026/*.mp4), and each memo's
 //   date is parsed from a leading "YYYY-MM-DD HHMM" in the filename.
 
-import { readFileSync, existsSync, readdirSync } from "node:fs";
+import { readFileSync, existsSync, readdirSync, createReadStream, statSync, unlinkSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { join, dirname, basename, extname } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
+import OpenAI from "openai";
 import { initializeApp, applicationDefault } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { getAuth } from "firebase-admin/auth";
@@ -71,6 +74,8 @@ const SERVER = arg("server", "http://localhost:3000");
 const TOKEN = arg("token"); // SALESCRIBE_SERVICE_TOKEN when hitting a deployed server
 const MODEL = arg("model", "base");
 const DO_TRANSCRIBE = Boolean(arg("transcribe", false));
+const DO_TRANSCRIBE_API = Boolean(arg("transcribe-api", false));
+const LIMIT = Number(arg("limit", 0)) || 0; // cap files processed (0 = all); handy for a first test
 const DRY_RUN = Boolean(arg("dry-run", false));
 const BUCKET = arg("bucket", fromEnv("NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET"));
 
@@ -78,6 +83,13 @@ if (!ORG || (!MANIFEST && !EMAIL)) {
   console.error("Need --org and either --manifest or --email. See the header of this file for usage.");
   process.exit(1);
 }
+
+const OPENAI_KEY = fromEnv("OPENAI_API_KEY");
+if (DO_TRANSCRIBE_API && !OPENAI_KEY) {
+  console.error("Missing OPENAI_API_KEY (set it in .env.local) for --transcribe-api.");
+  process.exit(1);
+}
+const openai = DO_TRANSCRIBE_API ? new OpenAI({ apiKey: OPENAI_KEY }) : null;
 
 const AUDIO_EXTS = new Set(["mp3", "m4a", "wav", "webm", "mp4", "ogg", "flac", "3gp"]);
 
@@ -119,11 +131,12 @@ function parseManifest(path) {
 }
 
 // --- transcription -----------------------------------------------------------
-function transcriptFor(audioPath, whisperPrompt) {
+async function transcriptFor(audioPath, whisperPrompt) {
   const sidecar = join(dirname(audioPath), `${basename(audioPath, extname(audioPath))}.txt`);
   if (existsSync(sidecar)) return readFileSync(sidecar, "utf8").trim();
+  if (DO_TRANSCRIBE_API) return transcribeApi(audioPath, whisperPrompt);
   if (!DO_TRANSCRIBE) {
-    throw new Error(`No transcript for ${audioPath}. Provide a .txt sidecar or pass --transcribe.`);
+    throw new Error(`No transcript for ${audioPath}. Provide a .txt sidecar, --transcribe, or --transcribe-api.`);
   }
   const out = tmpdir();
   const args = [audioPath, "--model", MODEL, "--output_format", "txt", "--output_dir", out];
@@ -133,6 +146,43 @@ function transcriptFor(audioPath, whisperPrompt) {
   if (res.status !== 0) throw new Error(`whisper failed for ${audioPath}: ${res.stderr || res.error}`);
   const txt = join(out, `${basename(audioPath, extname(audioPath))}.txt`);
   return readFileSync(txt, "utf8").trim();
+}
+
+// OpenAI Whisper API. These sources are often video and can exceed Whisper's
+// 25MB limit, so downmix to a compact mono 16kHz mp3 with ffmpeg first (also
+// strips video and normalizes 3gp/mp4 into a supported format). Falls back to
+// the raw file if ffmpeg isn't available and the file is small enough.
+async function transcribeApi(audioPath, prompt) {
+  const tmp = join(tmpdir(), `salescribe-${randomUUID()}.mp3`);
+  const ff = spawnSync(
+    "ffmpeg",
+    ["-y", "-i", audioPath, "-vn", "-ac", "1", "-ar", "16000", "-b:a", "48k", tmp],
+    { encoding: "utf8" },
+  );
+  let sendPath = tmp;
+  if (ff.status !== 0 || !existsSync(tmp)) {
+    if (statSync(audioPath).size > 25 * 1024 * 1024) {
+      throw new Error(`ffmpeg unavailable and ${basename(audioPath)} exceeds Whisper's 25MB limit — install ffmpeg.`);
+    }
+    sendPath = audioPath; // small enough to send as-is
+  }
+  try {
+    const res = await openai.audio.transcriptions.create({
+      file: createReadStream(sendPath),
+      model: "whisper-1",
+      prompt: prompt || undefined,
+      response_format: "text",
+    });
+    return (typeof res === "string" ? res : res?.text || "").trim();
+  } finally {
+    if (sendPath === tmp) {
+      try {
+        unlinkSync(tmp);
+      } catch {
+        // best-effort temp cleanup
+      }
+    }
+  }
 }
 
 // --- extraction (reuse the running app's extractor) --------------------------
@@ -198,11 +248,12 @@ async function buildGrounding() {
 
 // Rows come from a manifest CSV, or (single-author mode) every audio file in
 // --dir attributed to --email.
-const rows = MANIFEST
+let rows = MANIFEST
   ? parseManifest(MANIFEST)
   : walkAudio(DIR)
       .sort()
       .map((f) => ({ file: f, email: EMAIL, date: dateFromName(f), visibility: VISIBILITY }));
+if (LIMIT) rows = rows.slice(0, LIMIT);
 
 console.log(`Importing ${rows.length} note(s) into org "${ORG}"${DRY_RUN ? " (dry run)" : ""}\n`);
 
@@ -216,7 +267,7 @@ for (const row of rows) {
     if (!existsSync(audioPath)) throw new Error(`file not found: ${audioPath}`);
     const user = await auth.getUserByEmail(row.email);
     const dateIso = row.date ? new Date(row.date).toISOString() : new Date().toISOString();
-    const transcript = transcriptFor(audioPath, grounding.whisperPrompt);
+    const transcript = await transcriptFor(audioPath, grounding.whisperPrompt);
     if (!transcript) throw new Error("empty transcript");
     const extraction = await extract(transcript, dateIso, grounding.extractContext);
 
