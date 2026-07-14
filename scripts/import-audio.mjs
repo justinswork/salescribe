@@ -28,6 +28,8 @@
 // Usage (single author — import a whole folder for one person, no manifest):
 //   node scripts/import-audio.mjs --dir ./audio/collin --email collin@vibrationresearch.com \
 //     --org vibrationresearch.com [--visibility shared] [--transcribe] [--dry-run]
+//   The folder is scanned recursively (e.g. Collin/2026/*.mp4), and each memo's
+//   date is parsed from a leading "YYYY-MM-DD HHMM" in the filename.
 
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { spawnSync } from "node:child_process";
@@ -77,7 +79,32 @@ if (!ORG || (!MANIFEST && !EMAIL)) {
   process.exit(1);
 }
 
-const AUDIO_EXTS = new Set(["mp3", "m4a", "wav", "webm", "mp4", "ogg", "flac"]);
+const AUDIO_EXTS = new Set(["mp3", "m4a", "wav", "webm", "mp4", "ogg", "flac", "3gp"]);
+
+// Recursively collect audio files under root, returned as paths relative to
+// root (single-author folders are laid out as {Person}/{Year}/*.mp4).
+function walkAudio(root) {
+  const out = [];
+  const walk = (rel) => {
+    for (const ent of readdirSync(join(root, rel), { withFileTypes: true })) {
+      const relPath = rel ? join(rel, ent.name) : ent.name;
+      if (ent.isDirectory()) walk(relPath);
+      else if (AUDIO_EXTS.has(extname(ent.name).slice(1).toLowerCase())) out.push(relPath);
+    }
+  };
+  walk("");
+  return out;
+}
+
+// Pull the visit date/time out of a filename like
+// "2026-05-14 1106 - Collin - Milwaukee Tool.mp4" so the memo carries the real
+// date. Returns "" (import falls back to "now") when there's no leading date.
+function dateFromName(file) {
+  const m = basename(file).match(/(\d{4})-(\d{2})-(\d{2})(?:[ _]+(\d{2})(\d{2}))?/);
+  if (!m) return "";
+  const [, y, mo, d, hh, mm] = m;
+  return new Date(Number(y), Number(mo) - 1, Number(d), hh ? Number(hh) : 12, mm ? Number(mm) : 0).toISOString();
+}
 
 // --- manifest ----------------------------------------------------------------
 function parseManifest(path) {
@@ -173,10 +200,9 @@ async function buildGrounding() {
 // --dir attributed to --email.
 const rows = MANIFEST
   ? parseManifest(MANIFEST)
-  : readdirSync(DIR)
-      .filter((f) => AUDIO_EXTS.has(extname(f).slice(1).toLowerCase()))
+  : walkAudio(DIR)
       .sort()
-      .map((f) => ({ file: f, email: EMAIL, date: "", visibility: VISIBILITY }));
+      .map((f) => ({ file: f, email: EMAIL, date: dateFromName(f), visibility: VISIBILITY }));
 
 console.log(`Importing ${rows.length} note(s) into org "${ORG}"${DRY_RUN ? " (dry run)" : ""}\n`);
 
