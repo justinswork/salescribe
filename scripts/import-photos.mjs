@@ -33,10 +33,25 @@ function arg(name, fallback) {
   return next && !next.startsWith("--") ? next : true;
 }
 
+// Read a value from the environment, falling back to .env.local (the shell
+// doesn't load NEXT_PUBLIC_* vars the way the dev server does).
+function fromEnv(name) {
+  if (process.env[name]) return process.env[name];
+  try {
+    for (const line of readFileSync(join(process.cwd(), ".env.local"), "utf8").split(/\r?\n/)) {
+      const eq = line.indexOf("=");
+      if (eq > 0 && line.slice(0, eq).trim() === name) return line.slice(eq + 1).trim();
+    }
+  } catch {
+    // no .env.local — fall through
+  }
+  return undefined;
+}
+
 const ORG = arg("org");
 const DIR = arg("dir"); // local-folder mode when set
 const DRY_RUN = Boolean(arg("dry-run", false));
-const BUCKET = arg("bucket", process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET);
+const BUCKET = arg("bucket", fromEnv("NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET"));
 
 if (!ORG) {
   console.error("Missing --org. See the header of this file for usage.");

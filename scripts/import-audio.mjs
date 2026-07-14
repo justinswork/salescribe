@@ -46,6 +46,20 @@ function arg(name, fallback) {
   return next && !next.startsWith("--") ? next : true;
 }
 
+// Read a value from the environment, falling back to .env.local.
+function fromEnv(name) {
+  if (process.env[name]) return process.env[name];
+  try {
+    for (const line of readFileSync(join(process.cwd(), ".env.local"), "utf8").split(/\r?\n/)) {
+      const eq = line.indexOf("=");
+      if (eq > 0 && line.slice(0, eq).trim() === name) return line.slice(eq + 1).trim();
+    }
+  } catch {
+    // no .env.local — fall through
+  }
+  return undefined;
+}
+
 const DIR = arg("dir", ".");
 const MANIFEST = arg("manifest");
 const EMAIL = arg("email"); // single-author mode: import every audio file in --dir for this user
@@ -56,7 +70,7 @@ const TOKEN = arg("token"); // SALESCRIBE_SERVICE_TOKEN when hitting a deployed 
 const MODEL = arg("model", "base");
 const DO_TRANSCRIBE = Boolean(arg("transcribe", false));
 const DRY_RUN = Boolean(arg("dry-run", false));
-const BUCKET = arg("bucket", process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET);
+const BUCKET = arg("bucket", fromEnv("NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET"));
 
 if (!ORG || (!MANIFEST && !EMAIL)) {
   console.error("Need --org and either --manifest or --email. See the header of this file for usage.");
