@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Avatar from "@/components/Avatar";
+import { useAuth } from "@/lib/AuthContext";
 import type { MemoRevision } from "@/lib/schema";
 
 export function ago(iso: string): string {
@@ -25,6 +26,7 @@ function summarize(r: MemoRevision): string {
 }
 
 export default function MemoHistoryView({ revisions }: { revisions: MemoRevision[] }) {
+  const { roster } = useAuth();
   // Newest first.
   const ordered = [...revisions].reverse();
   const [selected, setSelected] = useState(0);
@@ -39,7 +41,9 @@ export default function MemoHistoryView({ revisions }: { revisions: MemoRevision
     <div className="flex flex-col md:flex-row gap-4">
       {/* Change list */}
       <ul className="md:w-72 shrink-0 flex flex-col gap-1 md:border-r md:border-zinc-200 md:dark:border-zinc-800 md:pr-4">
-        {ordered.map((r, i) => (
+        {ordered.map((r, i) => {
+          const member = r.byUid ? roster[r.byUid] : undefined;
+          return (
           <li key={i}>
             <button
               type="button"
@@ -50,7 +54,7 @@ export default function MemoHistoryView({ revisions }: { revisions: MemoRevision
                   : "hover:bg-zinc-50 dark:hover:bg-zinc-900"
               }`}
             >
-              <Avatar size={28} name={r.byName} seed={r.byUid} />
+              <Avatar size={28} name={r.byName} seed={r.byUid} photoURL={member?.photoURL} color={member?.avatarColor} />
               <span className="flex-1 min-w-0">
                 <span className="block text-sm text-zinc-900 dark:text-zinc-100 leading-snug">
                   <span className="font-medium">{r.byName}</span> {summarize(r)}
@@ -59,13 +63,20 @@ export default function MemoHistoryView({ revisions }: { revisions: MemoRevision
               </span>
             </button>
           </li>
-        ))}
+          );
+        })}
       </ul>
 
       {/* Selected revision detail */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-4">
-          <Avatar size={32} name={current.byName} seed={current.byUid} />
+          <Avatar
+            size={32}
+            name={current.byName}
+            seed={current.byUid}
+            photoURL={current.byUid ? roster[current.byUid]?.photoURL : undefined}
+            color={current.byUid ? roster[current.byUid]?.avatarColor : undefined}
+          />
           <div className="min-w-0">
             <div className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">{current.byName}</div>
             <div className="text-xs text-zinc-400 dark:text-zinc-500">

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import ExtractionView from "@/components/ExtractionView";
+import Avatar from "@/components/Avatar";
 import VisibilityPill from "@/components/VisibilityPill";
 import MemoEditor from "@/components/MemoEditor";
 import MemoHistoryView, { ago } from "@/components/MemoHistoryView";
@@ -40,7 +41,8 @@ export default function MemoDetailView({
   memo: Memo;
   onUpdated?: (m: Memo) => void;
 }) {
-  const { user, org, orgGrounding } = useAuth();
+  const { user, org, orgGrounding, roster } = useAuth();
+  const authorMember = memo.authorUid ? roster[memo.authorUid] : undefined;
   const [editing, setEditing] = useState(false);
   const [tab, setTab] = useState<"details" | "history">("details");
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
@@ -175,7 +177,16 @@ export default function MemoDetailView({
             )}
             <span>Recorded {new Date(memo.created_iso).toLocaleString()}</span>
             {memo.authorName && (
-              <span className="text-xs text-zinc-400 dark:text-zinc-500">· {memo.authorName}</span>
+              <span className="inline-flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
+                <Avatar
+                  size={20}
+                  name={memo.authorName}
+                  seed={memo.authorUid || memo.authorName}
+                  photoURL={authorMember?.photoURL}
+                  color={authorMember?.avatarColor}
+                />
+                {memo.authorName}
+              </span>
             )}
             <VisibilityPill visibility={memo.visibility} />
             {memo.is_demo && (
