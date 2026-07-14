@@ -108,6 +108,8 @@ function SalescribeApp() {
   const [homeTab, setHomeTab] = useState<"memos" | "briefings">("memos");
   // Team feed filter: everyone's shared memos vs. only the ones you authored.
   const [homeMemoFilter, setHomeMemoFilter] = useState<"all" | "mine">("all");
+  // Search text for the meeting-prep company picker.
+  const [briefingQuery, setBriefingQuery] = useState("");
 
   // Live transcript from the browser's SpeechRecognition during memo recording.
   // This is just a UX preview — the authoritative transcript still comes from
@@ -736,10 +738,14 @@ function SalescribeApp() {
 
             {pastMemos.length > 0 && (() => {
               // Tabbed home: Memos (the full list) vs. Briefings (one row per
-              // company with 2+ memos, click to generate a brief). The two
-              // share vertical real estate instead of stacking — keeps the
-              // page from getting overwhelming once demo data is loaded.
-              const briefingOptions = getCompanyOptions(pastMemos).filter((o) => o.memoCount >= 2);
+              // company we have any memo for, click to generate a brief). The
+              // two share vertical real estate instead of stacking — keeps the
+              // page from getting overwhelming once real data is loaded.
+              const briefingOptions = getCompanyOptions(pastMemos);
+              const bq = briefingQuery.trim().toLowerCase();
+              const visibleBriefings = bq
+                ? briefingOptions.filter((o) => o.company.toLowerCase().includes(bq))
+                : briefingOptions;
               return (
                 <div className="flex flex-col gap-3">
                   <div className="flex items-center gap-1 border-b border-zinc-200 dark:border-zinc-800">
@@ -816,38 +822,54 @@ function SalescribeApp() {
                   )}
 
                   {homeTab === "briefings" && (
-                    briefingOptions.length === 0 ? (
-                      <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-4 text-sm text-zinc-500 dark:text-zinc-400 italic">
-                        Got a meeting with a prospect coming up? Once you've recorded 2+ memos about the same company, they'll show up here so we can prep you with a quick read across all of them.
-                      </div>
-                    ) : (
-                      <section className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-4">
-                        <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 mb-1">
-                          Got a meeting coming up?
-                        </h3>
-                        <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-3">
-                          Pick the prospect — we&apos;ll read every past memo about them and prep you with the deal arc, open items, talking points, and risks before you walk in.
-                        </p>
-                        <ul className="flex flex-col gap-1.5">
-                          {briefingOptions.slice(0, 15).map((o) => (
-                            <li key={o.company}>
-                              <button
-                                type="button"
-                                onClick={() => openBriefing(o.company)}
-                                className="w-full flex items-center justify-between gap-3 rounded border border-zinc-200 dark:border-zinc-800 p-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-900"
-                              >
-                                <span className="font-medium text-zinc-900 dark:text-zinc-100 truncate">
-                                  {o.company}
-                                </span>
-                                <span className="text-xs text-zinc-500 dark:text-zinc-400 shrink-0">
-                                  {o.memoCount} memos · prep me →
-                                </span>
-                              </button>
-                            </li>
-                          ))}
-                        </ul>
-                      </section>
-                    )
+                    <section className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-4">
+                      <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 mb-1">
+                        Got a meeting coming up?
+                      </h3>
+                      <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-3">
+                        Search for the company you&apos;re visiting — we&apos;ll read every past memo about them and prep you with the deal arc, open items, talking points, and risks before you walk in.
+                      </p>
+                      <input
+                        type="search"
+                        value={briefingQuery}
+                        onChange={(e) => setBriefingQuery(e.target.value)}
+                        placeholder="Search companies…"
+                        className="w-full rounded border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 mb-3"
+                      />
+                      {visibleBriefings.length === 0 ? (
+                        <div className="text-sm text-zinc-500 dark:text-zinc-400 italic">
+                          {briefingOptions.length === 0
+                            ? "No companies found in your memos yet."
+                            : `No companies match "${briefingQuery.trim()}".`}
+                        </div>
+                      ) : (
+                        <>
+                          <ul className="flex flex-col gap-1.5 max-h-96 overflow-y-auto">
+                            {visibleBriefings.slice(0, 50).map((o) => (
+                              <li key={o.company}>
+                                <button
+                                  type="button"
+                                  onClick={() => openBriefing(o.company)}
+                                  className="w-full flex items-center justify-between gap-3 rounded border border-zinc-200 dark:border-zinc-800 p-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-900"
+                                >
+                                  <span className="font-medium text-zinc-900 dark:text-zinc-100 truncate">
+                                    {o.company}
+                                  </span>
+                                  <span className="text-xs text-zinc-500 dark:text-zinc-400 shrink-0">
+                                    {o.memoCount} memo{o.memoCount === 1 ? "" : "s"} · prep me →
+                                  </span>
+                                </button>
+                              </li>
+                            ))}
+                          </ul>
+                          {visibleBriefings.length > 50 && (
+                            <p className="text-xs text-zinc-400 dark:text-zinc-500 mt-2 italic">
+                              Showing the first 50 of {visibleBriefings.length} — keep typing to narrow it down.
+                            </p>
+                          )}
+                        </>
+                      )}
+                    </section>
                   )}
                 </div>
               );

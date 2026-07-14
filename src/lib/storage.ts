@@ -357,8 +357,8 @@ export function findMemosByCompany(company: string, all: Memo[]): Memo[] {
 
 // Returns the distinct companies that appear across all memos, with a count
 // of how many memos reference each. Sorted descending by count so the most
-// "briefable" prospects bubble up. Used to populate the briefings panel in
-// the UI — only companies with at least 2 memos are worth a brief.
+// "briefable" prospects bubble up. Used to populate the meeting-prep picker —
+// every company we have at least one memo for is offered.
 export function getCompanyOptions(all: Memo[]): Array<{ company: string; memoCount: number }> {
   const counts = new Map<string, { display: string; count: number }>();
   for (const m of all) {
