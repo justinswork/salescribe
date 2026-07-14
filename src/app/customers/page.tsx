@@ -10,6 +10,7 @@ import Link from "next/link";
 import AuthGuard from "@/components/AuthGuard";
 import AccountMenu from "@/components/AccountMenu";
 import ThemeToggle from "@/components/ThemeToggle";
+import CustomerAvatar from "@/components/CustomerAvatar";
 import { useAuth } from "@/lib/AuthContext";
 import { authedFetch, apiError } from "@/lib/api";
 import { loadMemos } from "@/lib/storage";
@@ -359,7 +360,11 @@ function CustomerRow({
 
   return (
     <li className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:gap-3">
-      <div className="sm:w-56 min-w-0">
+      <div className="flex items-center gap-3 sm:w-56 min-w-0">
+        <Link href={`/customers/${customer.id}`} aria-label={customer.name} className="shrink-0">
+          <CustomerAvatar name={customer.name} logoUrl={customer.logoUrl} seed={customer.id} size={36} />
+        </Link>
+        <div className="min-w-0">
         <Link
           href={`/customers/${customer.id}`}
           className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate hover:underline block"
@@ -383,6 +388,7 @@ function CustomerRow({
               No address
             </span>
           )}
+        </div>
         </div>
       </div>
       <input

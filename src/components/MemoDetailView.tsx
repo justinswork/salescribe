@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import ExtractionView from "@/components/ExtractionView";
 import Avatar from "@/components/Avatar";
+import CustomerAvatar from "@/components/CustomerAvatar";
 import Highlight from "@/components/Highlight";
 import VisibilityPill from "@/components/VisibilityPill";
 import MemoEditor from "@/components/MemoEditor";
@@ -342,14 +343,12 @@ export default function MemoDetailView({
       <section className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-4">
         <div className="flex items-center gap-3">
           {company && (
-            customer?.logoUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={customer.logoUrl} alt="" className="h-10 w-10 rounded object-contain bg-white shrink-0" />
-            ) : (
-              <div className="h-10 w-10 rounded bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-sm font-semibold text-zinc-400 dark:text-zinc-500 shrink-0">
-                {(customer?.name || company).slice(0, 1).toUpperCase()}
-              </div>
-            )
+            <CustomerAvatar
+              name={customer?.name || company}
+              logoUrl={customer?.logoUrl}
+              seed={customer?.id || customerId(company)}
+              size={40}
+            />
           )}
           <div className="min-w-0 flex-1">
             <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">

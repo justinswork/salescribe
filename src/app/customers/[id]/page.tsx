@@ -12,6 +12,7 @@ import { useParams } from "next/navigation";
 import AuthGuard from "@/components/AuthGuard";
 import AccountMenu from "@/components/AccountMenu";
 import ThemeToggle from "@/components/ThemeToggle";
+import CustomerAvatar from "@/components/CustomerAvatar";
 import { useAuth } from "@/lib/AuthContext";
 import { loadMemos } from "@/lib/storage";
 import {
@@ -42,6 +43,15 @@ function canonicalName(visits: Memo[]): string {
     if (n) counts.set(n, (counts.get(n) ?? 0) + 1);
   }
   return Array.from(counts.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0] ?? "";
+}
+
+// Normalize a website field for storage: trim, drop if empty, and prepend
+// https:// when the user typed a bare domain so the stored value is a valid,
+// clickable URL.
+function normalizeWebsite(raw: string): string | null {
+  const s = raw.trim();
+  if (!s) return null;
+  return /^https?:\/\//i.test(s) ? s : `https://${s}`;
 }
 
 function CustomerPageContent() {
@@ -153,6 +163,49 @@ function CustomerHeaderCard({
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState(customer.name);
   const [savingName, setSavingName] = useState(false);
+  // Logo is a URL by default (paste a link to the company's logo); uploading a
+  // file is the fallback for the cases where a hosted URL isn't handy.
+  const [editingLogo, setEditingLogo] = useState(false);
+  const [urlDraft, setUrlDraft] = useState(customer.logoUrl ?? "");
+  const [savingLogo, setSavingLogo] = useState(false);
+
+  // Save (or clear) the logo URL. Empty clears it; otherwise require an http(s)
+  // link so we don't store something the <img> can't load.
+  function saveLogoUrl() {
+    const url = urlDraft.trim();
+    if (url && !/^https?:\/\//i.test(url)) {
+      onError("Enter a full image URL starting with http:// or https://");
+      return;
+    }
+    void (async () => {
+      setSavingLogo(true);
+      onError("");
+      try {
+        onSaved(await upsertCustomer({ id: customer.id, name: customer.name, logoUrl: url || null }));
+        setEditingLogo(false);
+      } catch (e) {
+        onError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setSavingLogo(false);
+      }
+    })();
+  }
+
+  function removeLogo() {
+    void (async () => {
+      setSavingLogo(true);
+      onError("");
+      try {
+        onSaved(await upsertCustomer({ id: customer.id, name: customer.name, logoUrl: null }));
+        setUrlDraft("");
+        setEditingLogo(false);
+      } catch (e) {
+        onError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setSavingLogo(false);
+      }
+    })();
+  }
 
   function saveName() {
     const n = nameDraft.trim();
@@ -186,6 +239,8 @@ function CustomerHeaderCard({
       try {
         const url = await uploadCustomerLogo(customer.id, file, ext);
         onSaved(await upsertCustomer({ id: customer.id, name: customer.name, logoUrl: url }));
+        setUrlDraft(url);
+        setEditingLogo(false);
       } catch (err) {
         onError(err instanceof Error ? err.message : String(err));
       } finally {
@@ -199,19 +254,15 @@ function CustomerHeaderCard({
       <div className="flex items-center gap-4">
         <button
           type="button"
-          onClick={() => fileRef.current?.click()}
+          onClick={() => {
+            setUrlDraft(customer.logoUrl ?? "");
+            setEditingLogo(true);
+          }}
           disabled={uploading}
-          title="Upload logo"
-          className="relative h-16 w-16 shrink-0 rounded border border-zinc-200 dark:border-zinc-800 overflow-hidden bg-white flex items-center justify-center hover:opacity-80 disabled:opacity-50"
+          title="Edit logo"
+          className="shrink-0 rounded-full hover:opacity-80 disabled:opacity-50"
         >
-          {customer.logoUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={customer.logoUrl} alt="" className="h-full w-full object-contain" />
-          ) : (
-            <span className="text-2xl font-semibold text-zinc-300 dark:text-zinc-600">
-              {customer.name.slice(0, 1).toUpperCase()}
-            </span>
-          )}
+          <CustomerAvatar name={customer.name} logoUrl={customer.logoUrl} seed={customer.id} size={64} />
         </button>
         <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={onPickLogo} />
         <div className="min-w-0 flex-1">
@@ -262,18 +313,88 @@ function CustomerHeaderCard({
               </button>
             </div>
           )}
-          <div className="text-sm text-zinc-500 dark:text-zinc-400">
-            {visitCount} {visitCount === 1 ? "visit" : "visits"}
-            {customer.lat != null && customer.lng != null ? " · located" : ""}
+          <div className="text-sm text-zinc-500 dark:text-zinc-400 flex flex-wrap items-center gap-x-2">
+            <span>
+              {visitCount} {visitCount === 1 ? "visit" : "visits"}
+              {customer.lat != null && customer.lng != null ? " · located" : ""}
+            </span>
+            {customer.website && (
+              <a
+                href={customer.website}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="inline-flex items-center gap-1 text-blue-600 hover:underline"
+                title={customer.website}
+              >
+                Visit website ↗
+              </a>
+            )}
           </div>
-          <button
-            type="button"
-            onClick={() => fileRef.current?.click()}
-            disabled={uploading}
-            className="mt-1 text-xs text-blue-600 hover:underline disabled:opacity-50"
-          >
-            {uploading ? "Uploading…" : customer.logoUrl ? "Change logo" : "Add logo"}
-          </button>
+          {editingLogo ? (
+            <div className="mt-1.5 flex flex-col gap-1.5">
+              <div className="flex items-center gap-2">
+                <input
+                  type="url"
+                  autoFocus
+                  value={urlDraft}
+                  onChange={(e) => setUrlDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") saveLogoUrl();
+                    if (e.key === "Escape") setEditingLogo(false);
+                  }}
+                  placeholder="https://example.com/logo.png"
+                  className="min-w-0 flex-1 rounded border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2 py-1 text-xs text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400"
+                />
+                <button
+                  type="button"
+                  onClick={saveLogoUrl}
+                  disabled={savingLogo}
+                  className="shrink-0 text-xs font-medium text-blue-600 hover:underline disabled:opacity-50"
+                >
+                  {savingLogo ? "Saving…" : "Save"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditingLogo(false)}
+                  disabled={savingLogo}
+                  className="shrink-0 text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
+                >
+                  Cancel
+                </button>
+              </div>
+              <div className="flex items-center gap-3 text-xs">
+                <button
+                  type="button"
+                  onClick={() => fileRef.current?.click()}
+                  disabled={uploading}
+                  className="text-zinc-500 dark:text-zinc-400 hover:underline disabled:opacity-50"
+                >
+                  {uploading ? "Uploading…" : "Upload a file instead"}
+                </button>
+                {customer.logoUrl && (
+                  <button
+                    type="button"
+                    onClick={removeLogo}
+                    disabled={savingLogo}
+                    className="text-red-600 hover:underline disabled:opacity-50"
+                  >
+                    Remove
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                setUrlDraft(customer.logoUrl ?? "");
+                setEditingLogo(true);
+              }}
+              className="mt-1 text-xs text-blue-600 hover:underline"
+            >
+              {customer.logoUrl ? "Change logo" : "Add logo"}
+            </button>
+          )}
         </div>
       </div>
     </section>
@@ -291,9 +412,13 @@ function ProfileCard({
 }) {
   const [address, setAddress] = useState(customer.address ?? "");
   const [notes, setNotes] = useState(customer.notes ?? "");
+  const [website, setWebsite] = useState(customer.website ?? "");
   const [saving, setSaving] = useState(false);
 
-  const dirty = address.trim() !== (customer.address ?? "").trim() || notes.trim() !== (customer.notes ?? "").trim();
+  const dirty =
+    address.trim() !== (customer.address ?? "").trim() ||
+    notes.trim() !== (customer.notes ?? "").trim() ||
+    website.trim() !== (customer.website ?? "").trim();
 
   function handleSave() {
     void (async () => {
@@ -306,6 +431,7 @@ function ProfileCard({
             name: customer.name,
             address: address.trim() || null,
             notes: notes.trim() || null,
+            website: normalizeWebsite(website),
           }),
         );
       } catch (e) {
@@ -325,6 +451,28 @@ function ProfileCard({
           value={address}
           onChange={(e) => setAddress(e.target.value)}
           placeholder="Street address, city, state"
+          className="w-full rounded border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400"
+        />
+      </label>
+      <label className="flex flex-col gap-1">
+        <span className="flex items-center justify-between text-xs font-medium text-zinc-500 dark:text-zinc-400">
+          Website
+          {customer.website && (
+            <a
+              href={customer.website}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="text-blue-600 hover:underline normal-case"
+            >
+              Open ↗
+            </a>
+          )}
+        </span>
+        <input
+          type="url"
+          value={website}
+          onChange={(e) => setWebsite(e.target.value)}
+          placeholder="https://example.com"
           className="w-full rounded border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400"
         />
       </label>

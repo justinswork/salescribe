@@ -14,7 +14,7 @@ export const AVATAR_COLORS = [
   "#3B6D11", // green
 ];
 
-function hashString(s: string): number {
+export function hashString(s: string): number {
   let h = 0;
   for (let i = 0; i < s.length; i++) {
     h = (h * 31 + s.charCodeAt(i)) | 0;
@@ -22,7 +22,7 @@ function hashString(s: string): number {
   return Math.abs(h);
 }
 
-function initialsFrom(name: string): string {
+export function initialsFrom(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return "?";
   const first = parts[0][0] ?? "";

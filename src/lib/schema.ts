@@ -349,6 +349,9 @@ export type Customer = {
   // Company logo: a tokenized Storage download URL (uploaded on the customer
   // page), rendered wherever the account appears.
   logoUrl?: string | null;
+  // Company website (external URL), shown as an "open site" link on the profile
+  // and editable there. null when unknown.
+  website?: string | null;
   created_iso: string;
   updated_iso: string;
 };
